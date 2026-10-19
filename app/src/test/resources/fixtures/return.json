@@ -1,0 +1,37 @@
+{
+  "search_metadata": {
+    "status": "Success",
+    "google_flights_url": "https://www.google.com/travel/flights?q=CLO+CTG"
+  },
+  "search_parameters": {
+    "engine": "google_flights",
+    "departure_id": "CTG",
+    "arrival_id": "CLO",
+    "outbound_date": "2027-03-25",
+    "return_date": "2027-03-28",
+    "type": 1,
+    "adults": 1,
+    "travel_class": 1,
+    "currency": "COP",
+    "gl": "co",
+    "hl": "es",
+    "stops": 1,
+    "sort_by": 2,
+    "departure_token": "opaque-unknown-token"
+  },
+  "best_flights": [],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "CLO", "name": "Alfonso Bonilla Aragón", "time": "2027-03-28 15:00"},
+          "arrival_airport": {"id": "CTG", "name": "Rafael Núñez", "time": "2027-03-28 16:30"},
+          "airline": "Operador Nuevo",
+          "flight_number": "AB 456"
+        }
+      ],
+      "price": 340000,
+      "type": "Round trip"
+    }
+  ]
+}

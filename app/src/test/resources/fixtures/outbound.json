@@ -1,0 +1,51 @@
+{
+  "search_metadata": {
+    "status": "Success",
+    "google_flights_url": "https://www.google.com/travel/flights?q=CTG+CLO"
+  },
+  "search_parameters": {
+    "engine": "google_flights",
+    "departure_id": "CTG",
+    "arrival_id": "CLO",
+    "outbound_date": "2027-03-25",
+    "return_date": "2027-03-28",
+    "type": 1,
+    "adults": 1,
+    "travel_class": 1,
+    "currency": "COP",
+    "gl": "co",
+    "hl": "es",
+    "stops": 1,
+    "sort_by": 2
+  },
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "CTG", "name": "Rafael Núñez", "time": "2027-03-25 08:00"},
+          "arrival_airport": {"id": "CLO", "name": "Alfonso Bonilla Aragón", "time": "2027-03-25 09:30"},
+          "airline": "Wingo",
+          "flight_number": "P5 7001"
+        }
+      ],
+      "price": 320000,
+      "type": "Round trip",
+      "departure_token": "opaque-wingo-token"
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "CTG", "name": "Rafael Núñez", "time": "2027-03-25 10:00"},
+          "arrival_airport": {"id": "CLO", "name": "Alfonso Bonilla Aragón", "time": "2027-03-25 11:30"},
+          "airline": "Aerolínea Desconocida",
+          "flight_number": "ZX 123"
+        }
+      ],
+      "price": 300000,
+      "type": "Round trip",
+      "departure_token": "opaque-unknown-token"
+    }
+  ]
+}
