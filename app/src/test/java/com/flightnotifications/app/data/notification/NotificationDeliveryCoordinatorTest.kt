@@ -84,6 +84,23 @@ class NotificationDeliveryCoordinatorTest {
     }
 
     @Test
+    fun sameFareCanBeDeliveredAgainForANewReviewButRetryOfOneReviewIsIdempotent() = runBlocking {
+        val store = FakeStore()
+        val published = mutableListOf<NotificationOutboxEntity>()
+        val coordinator = NotificationDeliveryCoordinator(store, NotificationPublisher { published += it })
+        val firstReview = pending().copy(fingerprint = "review-1")
+        val secondReview = pending().copy(fingerprint = "review-2")
+
+        assertEquals(NotificationDeliveryResult.SENT, coordinator.deliver(firstReview))
+        assertEquals(NotificationDeliveryResult.ALREADY_SENT, coordinator.deliver(firstReview))
+        assertEquals(NotificationDeliveryResult.SENT, coordinator.deliver(secondReview))
+
+        assertEquals(listOf(350_000L, 350_000L), published.map { it.priceCop })
+        assertEquals(listOf("review-1", "review-2"), published.map { it.fingerprint })
+        assertEquals(2, store.committedCount)
+    }
+
+    @Test
     fun stalePendingNoticeIsDiscardedWithoutPublishing() = runBlocking {
         val store = FakeStore()
         store.enqueue(pending())

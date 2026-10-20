@@ -46,14 +46,14 @@ La implementación actual incluye la pantalla del PoC para diagnóstico, CRUD de
 
 | Comprobación existente | Evidencia local o procedencia | Alcance |
 |---|---|---|
-| Pruebas JVM: 44, sin fallos ni errores | XML en `app/build/test-results/testDebugUnitTest/`, ejecución 20-10-2026 | Parser, HTTP simulado, validación, cuotas, alertas, deduplicación, recuperación y concurrencia |
+| Pruebas JVM: 45, sin fallos ni errores ni omisiones | XML en `app/build/test-results/testDebugUnitTest/`, ejecución 20-10-2026 | Parser, HTTP simulado, validación, cuotas, alertas, deduplicación, recuperación y concurrencia; incluye regresión de repetir tarifa en nueva revisión con idempotencia por revisión |
 | Pruebas instrumentadas: 24, sin fallos ni errores | XML en `app/build/outputs/androidTest-results/connected/debug/TEST-Pixel_5(AVD) - 16.xml`, 20-10-2026 COT | Compose/CRUD, Room v1→v4, presupuesto concurrente, outbox, WorkManager y Keystore; emulador Pixel 5, API 36 |
-| Compilación y Lint debug/release | `outputs/build-final.log`, ejecución de `scripts/Build-Apk.ps1` | Aprobados; Lint emitió 6 recomendaciones sin errores |
+| Compilación y Lint debug/release | `outputs/build-final.log` y ejecución Gradle del 20-10-2026 | `lintDebug` y `lintRelease` aprobados sin errores; Gradle mantiene avisos de APIs/declaraciones deprecadas |
 | Migración y persistencia | `FlightAlertMigrationTest` y `FlightAlertDaoTest` | v1→v4 conserva presupuesto/reloj; una falla conserva precio previo, opciones verificadas y criterios; no resembra ejemplo y mantiene idempotencia de eventos |
 | Instalación/update del release | `docs/INFORME_IMPLEMENTACION_V1.md` | 1.0.1→1.0.2 actualizado en AVD. Para 1.0.4 se verificaron firma estable y versionCode ascendente; falta instalar esta versión sobre la anterior |
 | Credencial y capturas | `KeystoreCredentialStore.kt`, manifest y `MainActivity.kt` | AES-GCM/Keystore, backup desactivado, capturas permitidas |
 
-Los resultados de pruebas de esta tabla corresponden a ejecuciones anteriores a V1.0.4. En V1.0.4 se recompiló debug/release y pasó `lintVital` de release, pero no se ejecutaron pruebas unitarias ni instrumentadas; por tanto, la preferencia nueva de repetir el aviso del mismo precio aún requiere una ejecución automatizada.
+Las pruebas se ejecutaron sobre la fuente de V1.0.4: 45 pruebas JVM y 24 instrumentadas en Pixel 5 AVD / API 36, todas aprobadas; también pasaron `lintDebug` y `lintRelease`. La regresión comprueba la nueva preferencia de repetir el mismo precio en una revisión distinta sin duplicar reintentos del mismo evento. Esta suite usa respuestas simuladas y no valida llamadas reales adicionales a SerpApi.
 
 Las pruebas instrumentadas informan fixtures locales y cero consultas de vuelos a SerpApi durante la implementación. No prueban Doze/reinicio en el teléfono del propietario; ese escenario requiere su dispositivo físico y queda explícito en el informe V1.
 
