@@ -1,29 +1,45 @@
 # Informe de implementación y aceptación V1
 
-**Fecha:** 20 de octubre de 2026 (COT). Este informe conserva la evidencia histórica de versiones anteriores y registra la entrega vigente V1.0.5.<br>
-**Proyecto:** `C:\Flight-Notifications-main`<br>
-**Especificación:** [REQUIREMENTS.md](../REQUIREMENTS.md) V1.4; [plan técnico](../PLAN_APP_DEFINITIVA.md) v1.2.<br>
-**Estado actual:** APK V1.0.5 debug y release generados desde Room v5 y copiados a `G:\Mi unidad\APK android car\`. La release usa `versionCode=7`, conserva el certificado estable y tiene firma v2 verificada. Se corrigieron los casos de revisión automática sin permiso de notificaciones, recuperación del reloj del presupuesto después de anomalías y coalescencia de búsquedas manuales/automáticas sin alterar el turno programado. Pasaron 48 pruebas JVM, 28 instrumentadas en emulador y `lintDebug`/`lintRelease`; ninguna usó SerpApi real. La instalación de esta versión sobre una instalación previa y las pruebas de ejecución en segundo plano en el teléfono físico siguen pendientes.
+**Fecha:** 20 de octubre de 2026 (COT). Este informe conserva la evidencia histórica de V1.0.3 a V1.0.5 y añade el estado vigente de V1.0.6.  
+**Proyecto:** `C:\Flight-Notifications-main`  
+**Especificación:** [REQUIREMENTS.md](../REQUIREMENTS.md) V1.4; [plan técnico](../PLAN_APP_DEFINITIVA.md) v1.2.  
+**Estado actual:** APK V1.0.6 debug y release generados localmente. La release usa `versionCode=8`, `versionName=1.0.6`, conserva el certificado estable y tiene firma v2 verificada. La compilación terminó correctamente; no se ejecutaron pruebas JVM ni instrumentadas para esta versión. La actualización y las comprobaciones de ejecución en segundo plano en el teléfono físico siguen pendientes.
 
-## Entrega vigente: V1.0.5
+## Entrega vigente: V1.0.6
 
-La revisión automática conserva el turno debido si Android no permite notificar, para evitar gastar GET en una alerta que no podría avisar. Las solicitudes manuales y automáticas revalidan las alertas después de adquirir el bloqueo compartido y coalescen una revisión solapada según su hora de finalización; una búsqueda manual no desplaza el calendario automático. El presupuesto se recupera de una observación de reloj anómala después de reanclar la referencia, sin liberar reservas por el salto. Room v5 añade la marca de finalización de revisión con una migración aditiva.
+Esta versión corrige la actualización inmediata de la lista después de crear o borrar alertas, añade autocompletado de aeropuertos colombianos por ciudad, nombre y código IATA, y guarda nuevas alertas activas por defecto. Al elegir ida se abre enseguida el selector de regreso. Se ampliaron los botones y chips de acción para facilitar el toque y se corrigió el mensaje del detalle que podía decir que una tarifa superaba el máximo y, a la vez, estaba dentro de él.
+
+La compilación de depuración y la release finalizaron correctamente. `lintVitalRelease` se ejecutó con `assembleRelease`. `apksigner` verificó la firma v2; el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351` coincide con la clave estable anterior. `aapt` confirmó `com.flightnotifications.app`, `versionCode=8` y `versionName=1.0.6`. No se ejecutaron pruebas automatizadas ni se instaló el APK en un teléfono. Los archivos se guardaron en `outputs/` y no se copiaron a Google Drive.
 
 | Variante | Identificador | Versión | Tamaño | SHA-256 |
 |---|---|---:|---:|---|
-| Release | `com.flightnotifications.app` | 1.0.5 (7) | 3.209.458 bytes | `e8c5a1c15c2403a48c984f8cfd70b4e382595b03cb13b4795651225f423adfbb` |
-| Debug | `com.flightnotifications.app.debug` | 1.0.5-debug (7) | 35.736.284 bytes | `952888971024ec11f61962dbbf78aa254145c793bf356669d4b9057abc9299f7` |
+| Release | `com.flightnotifications.app` | 1.0.6 (8) | 3.340.530 bytes | `6c6df8b1a87907894915911d5ba1870b15b9b9e6c1cbbcf5507d6a270e9ce4cf` |
+| Debug | `com.flightnotifications.app.debug` | 1.0.6-debug (8) | 37.029.612 bytes | `81b0d881c7787ff8e58b499e11468308ae8b17f3ad2343bf76bb975868dc45e2` |
 
-`apksigner` verificó la firma v2 de la release. Su certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351` coincide con la clave estable. `aapt` confirmó `com.flightnotifications.app`, `versionCode=7`, `versionName=1.0.5`, `minSdk=33` y `targetSdk=37`. Los tamaños y hashes coinciden entre `outputs/` y G:. La compilación ejecutó pruebas JVM, Lint debug/release y las tareas de ensamblado; las pruebas instrumentadas se ejecutaron aparte. Una ejecución instrumentada tuvo un timeout transitorio en una prueba Compose; la repetición completa pasó 28/28.
+- [APK release 1.0.6 para instalar](../outputs/flight-notifications-1.0.6-release.apk)
+- [APK debug 1.0.6](../outputs/flight-notifications-1.0.6-debug.apk)
+- [Hashes SHA-256](../outputs/SHA256SUMS.txt)
+- [Log de compilación](../outputs/build-final.log)
+
+## Evidencia histórica V1.0.5
+
+Esta versión incluye el rediseño de navegación y pantallas de alertas, actividad, ajustes, diagnóstico y edición. Se generaron las variantes debug y release con Gradle. `apksigner` verificó la firma v2 de release y el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`, igual al certificado estable anterior. `aapt` confirmó `com.flightnotifications.app`, `versionCode=7` y `versionName=1.0.5`. Se ejecutó `lintVitalRelease` como parte de `assembleRelease`; no se ejecutaron pruebas JVM, instrumentadas ni el Lint completo en esta compilación. No se instaló el APK en un dispositivo físico. Los archivos se guardaron en `outputs/` y no se copiaron a Google Drive.
+
+| Variante | Identificador | Versión | Tamaño | SHA-256 |
+|---|---|---:|---:|---|
+| Release | `com.flightnotifications.app` | 1.0.5 (7) | 3.307.762 bytes | `e211f9c8f01c56f587079939bd3b34667f2f00d8ac1cba61fdbbcfb927bdfa2c` |
+| Debug | `com.flightnotifications.app.debug` | 1.0.5-debug (7) | 36.096.732 bytes | `813be882615f3ac85d36895818978e4998ff3d82018bb961ede04e96b627347e` |
 
 - [APK release 1.0.5 para instalar](../outputs/flight-notifications-1.0.5-release.apk)
 - [APK debug 1.0.5](../outputs/flight-notifications-1.0.5-debug.apk)
 - [Hashes SHA-256](../outputs/SHA256SUMS.txt)
 - [Log de compilación](../outputs/build-final.log)
 
-Los APK también están en `G:\Mi unidad\APK android car\`. La release conserva el identificador y certificado para actualizar la versión previa. Las pruebas de migración cubren bases Room v1→v5 y v2→v5; no se ha instalado todavía sobre los datos reales del teléfono.
+## Evidencia histórica V1.0.4
 
-## Entrega histórica: V1.0.4
+La siguiente entrega anterior conserva sus hashes y resultados de pruebas como evidencia histórica.
+
+## Historial: V1.0.4
 
 La elegibilidad selecciona la oferta completa y verificada de menor precio que cumple el máximo de la alerta. Se genera un ID de despacho nuevo por revisión, por lo que una revisión posterior puede volver a notificar el mismo itinerario y precio. La idempotencia evita duplicar el mismo despacho durante recuperación; no se usa para suprimir tarifas ya avisadas. El esquema Room continúa en v4, sin migración de base de datos para este cambio.
 
@@ -74,7 +90,7 @@ La evidencia siguiente corresponde a la actualización anterior V1.0.2 y no acre
 - [APK release V1.0.2](../outputs/flight-notifications-1.0.2-release.apk)
 - [APK debug V1.0.2](../outputs/flight-notifications-1.0.2-debug.apk)
 
-## Evidencia histórica: entorno y pruebas de V1.0.4 y versiones anteriores
+## Entorno y pruebas locales
 
 - Windows; Gradle 9.6.0 con JDK 21; bytecode 17; Android SDK/compile SDK 37, Build Tools 36.0.0; `minSdk=33`, `targetSdk=37`.
 - AGP 9.4.0, Kotlin 2.4.21, KSP 2.3.12, Compose BOM 2026.09.00, Room 2.8.5 y WorkManager 2.12.0.
@@ -113,31 +129,31 @@ La captura de conexión sitúa la respuesta de Account API a las 08:10:57 COT, m
 | T17 | Parcial | Pruebas cubren HTTP 401/403/429/4xx/5xx y campos críticos malformados/negativos; falta completar todos los límites oficiales y revisar cada ruta de log. |
 | T18 | Parcial | Cuenta inactiva/ inválida y errores bloquean búsquedas; falta probar explícitamente saldo en caché seguido de fallo y recuperación con una cuenta nueva. |
 | T19 | Parcial | Reserva por cada GET, concurrencia del presupuesto y serialización de preflight están cubiertas; timeout conserva reserva y no reintenta; falta la matriz completa de justicia y reducción de capacidad por lote. |
-| T20 | Parcial | Cambios de reloj, reinicio simulado, retroceso/avance anómalo y ventana probados; no se validó el teléfono físico apagado. |
-| T21 | Parcial | Manual y Worker vuelven a seleccionar alertas tras adquirir el bloqueo y coalescen revisiones superpuestas sin mover el turno. Pruebas cubren la selección diferida y la persistencia de finalización; falta la prueba integrada de UI+Worker simultáneos y eliminar durante una petición HTTP suspendida. |
+| T20 | Parcial | Cambios de reloj, reinicio simulado y ventana probados; no se validó el teléfono físico apagado. |
+| T21 | Parcial | Repository descarta un resultado cuya versión de criterios quedó obsoleta tras editar; falta prueba integrada de manual y Worker simultáneos y de eliminar durante una petición HTTP suspendida. |
 | T22 | Parcial | Outbox persistente, commits atómicos y coordinador cubren recuperación simulada tras publicar, permisos revocados y concurrencia; falta matar el proceso Android real entre publicación y commit y comprobar recuperación del sistema. |
 | T23 | Parcial | Respuestas HTTP de error no se reintentan y se cubren 401/403/429/4xx/5xx; faltan desconexión/timeout y todas las excepciones de red sin fuga. |
 | T24 | Parcial | WorkManager Test confirma un único coordinador periódico conectado; política de retry respeta frecuencia. Falta instrumentar el Worker completo con fakes, sin alertas debidas y backoff/reintento de punta a punta. |
 | T25 | No ejecutado | Requiere teléfono físico: app cerrada normalmente, bloqueo, Doze, red y reinicio. Force-stop no se declara probado. |
-| T26 | Parcial | Instrumentación Room valida v1→v5 y v2→v5, presupuesto/reloj, resultados y outbox; falta actualizar sobre una instalación real previa que tenga credencial y confirmar su ciclo completo. |
+| T26 | Parcial | Instrumentación Room valida v1→v4 y v2→v4, presupuesto/reloj, resultados y outbox; falta actualizar sobre una instalación real previa que tenga credencial y confirmar su ciclo completo. |
 | T27 | Parcial | DAO comprueba semilla única y no recreación al borrar; el CRUD Compose conserva el ejemplo; falta instalar, borrar, reiniciar y actualizar en el dispositivo objetivo. |
 | T28 | Parcial | Keystore cifra/lee/reemplaza/elimina; falta auditoría exhaustiva del APK/logcat para cada error HTTP. |
 | T29 | Parcial | Compose instrumentado cubre pantalla inicial y CRUD; faltan accesibilidad, rotación, fuentes ampliadas, contraste y estados completos. Capturas permitidas. |
-| T30 | Parcial | V1.0.5 debug/release compiladas; firma release, certificado estable, hashes y metadatos ascendentes verificados. Falta instalar V1.0.5 sobre una instalación previa y comprobar conservación de datos. |
+| T30 | Parcial | V1.0.3 debug/release compiladas; firma release, certificado estable y metadatos ascendentes verificados. Falta instalar V1.0.3 sobre una instalación previa y comprobar conservación de datos. |
 | T31 | Parcial | Catálogos empaquetados con fuentes/fecha y operadores desconocidos; falta actualizar APK con datos ya creados. |
 | T32 | Aprobado | Prueba real V1.0.2 del propietario: 2 GET de vuelos HTTP 200 y resultado `VERIFICADO`; los 2 GET locales de esa tanda y el uso mensual informado se distinguen. No se atribuyen los otros 2 usos de cuenta ni se confunden fixtures con API. |
-| T33 | Aprobado para entrega local | README, informe, APKs V1.0.5, SHA-256 y enlaces descargables están disponibles; copias en G: cotejadas con `outputs/`. La aceptación de instalación/ejecución física continúa pendiente y se detalla por separado. |
+| T33 | Aprobado | README, informe de estado, APKs V1.0.3, SHA-256 y enlaces descargables están disponibles; copias en G: cotejadas con `outputs/`. Los casos pendientes de aceptación se detallan por separado en esta matriz. |
 
 ## Pendiente para cerrar la aceptación en uso real
 
-El propietario ya ejecutó búsquedas manuales reales con versiones anteriores y confirmó tarifas de ida/vuelta para los casos compartidos. Queda instalar V1.0.5 como actualización en el teléfono y comprobar conservación de datos, credencial y registros; también observar WorkManager con la app cerrada normalmente, pantalla apagada/bloqueada y tras reinicio. Doze, ahorro de batería y detención forzada pueden aplazar o detener el trabajo según Android/fabricante. Las búsquedas manuales no demuestran la ejecución automática en segundo plano.
+El propietario ya ejecutó una búsqueda manual real con V1.0.2 y confirmó una tarifa de ida/vuelta para el caso compartido. Queda verificar en el teléfono que una actualización conserve los datos previos y observar WorkManager con la app cerrada normalmente, pantalla apagada/bloqueada y tras reinicio; Doze, ahorro de batería y detención forzada pueden aplazar o detener el trabajo según Android/fabricante. La búsqueda manual no demuestra la ejecución automática en segundo plano.
 
 ## Resultado de la auditoría del documento maestro §17
 
 | Criterio | Estado | Evidencia o límite |
 |---|---|---|
-| Proyecto/Gradle (1) | Parcial | Compilación, 48 pruebas JVM, 28 instrumentadas y Lint debug/release pasan en esta fuente; falta la validación de uso en el teléfono físico. |
-| APK, firma y actualización (2) | Parcial | V1.0.5 debug/release, firma estable, hashes y copia en G: verificados. La actualización física sobre una instalación anterior sigue pendiente. |
+| Proyecto/Gradle (1) | Parcial | Compilación, 44 pruebas JVM, 24 instrumentadas y LintDebug pasan en esta fuente; LintRelease no se volvió a ejecutar y falta abrir/sincronizar el proyecto desde Android Studio. |
+| APK, firma y actualización (2) | Aprobado | 1.0.2 debug/release, firma estable, G: y actualización 1.0.1→1.0.2 comprobadas en AVD. El teléfono físico no se probó. |
 | Clave, Keystore, cuenta y ausencia de secretos (3) | Parcial | Flujo/cifrado/Account API implementados y Keystore probado; no se auditó exhaustivamente Logcat de todos los errores HTTP ni cada superficie del APK. |
 | JSON real y `departure_token` (4) | Aprobado para un escenario | La prueba real V1.0.2 produjo 3 tokens de ida, una opción asociada válida de regreso, ambas opciones Round trip y el mismo total COP 599.350. No hay JSON crudo; solo se exploró una salida candidata. |
 | Directos, escalas, fechas y tarifa (5) | Parcial | Validador implementado; la cobertura automatizada de ambos sentidos, conexiones y bordes de fechas/precio no cubre toda la matriz. |
@@ -147,12 +163,12 @@ El propietario ya ejecutó búsquedas manuales reales con versiones anteriores y
 | CRUD, frecuencia y programación (9) | Parcial | Código/UI presentes; pruebas instrumentadas no recorren todo el CRUD ni escenarios de ejecución real. |
 | Efectos de edición (10) | Parcial | Versiones de criterios/política y dato previo implementados; falta la tabla completa de casos automatizados. |
 | Cuenta y presupuesto (11) | Parcial | La cuenta real devolvió Active/capacidad 244 y la tanda reservó 2 de los 198 GET locales disponibles; la matriz de errores, concurrencia y recuperación es incompleta y falta confirmar la línea de Account API del preflight en el log copiado. |
-| Política de avisos (12) | Parcial | Selector de tarifa más baja, repetición permitida entre revisiones e idempotencia por evento; Worker suspende consultas sin permiso/canal. Falta notificación OS en el teléfono y revocación real del permiso durante el despacho. |
+| Política de avisos (12) | Parcial | Selector barato y estable, deduplicación y recuperación simulada pasan; falta notificación OS con varias ofertas y permiso revocado en vivo. |
 | Resultado, avisos y retención (13) | Parcial | Resultado, ofertas y dedup persisten; retención de 100 está probada en Room, falta ciclo persistente de purga tras reinicio real. |
 | Ejemplo inicial (14) | Parcial | Semilla única, pausada y migración probadas; falta repetir ciclo completo en instalación física limpia, borrado y reinicio. |
 | WorkManager en teléfono físico (15) | No ejecutado | Pendiente en teléfono del propietario: pantalla apagada, cierre, red, Doze y reinicio. |
-| Pruebas offline completas (16) | Parcial | 48 JVM y 28 instrumentadas pasan; la matriz T01–T33 marca explícitamente los escenarios que aún faltan. |
+| Pruebas offline completas (16) | Parcial | 44 JVM y 24 instrumentadas pasan; la matriz T01–T33 marca explícitamente los escenarios que aún faltan. |
 | README (17) | Aprobado | Incluye entorno, compilación, instalación, permisos, cuota, seguridad y limitaciones. |
-| Informe, conteo y pendientes (18) | Aprobado | Este informe separa build/pruebas automáticas (0 GET reales) de las pruebas manuales compartidas (GET reales) y registra verificaciones restantes. |
+| Informe, conteo y pendientes (18) | Aprobado | Este informe separa build/pruebas automáticas (0 GET reales) de la prueba manual V1.0.2 (2 GET de vuelos) y registra verificaciones restantes. |
 
-V1.0.5 incorpora Room v5, las correcciones de reloj/cuota y concurrencia de revisiones, y está empaquetada y entregada con firma estable. **Esto no significa que toda la definición de aceptación esté completada**: quedan casos de matriz, prueba integrada de ciertas carreras, instalación/actualización en el teléfono físico y validación de WorkManager en segundo plano.
+El APK V1.0.2 incluye las correcciones previas de ofertas/expiración y el snapshot visible del presupuesto, y tiene una prueba manual aprobada para un itinerario. V1.0.3 incorpora Room v4 y los pasos 1–3 completados, y ya está empaquetada y entregada. **No significa que toda la definición de aceptación esté completada**: quedan casos de matriz y validaciones físicas de WorkManager, además de instalar V1.0.3 como actualización y confirmar los datos conservados.

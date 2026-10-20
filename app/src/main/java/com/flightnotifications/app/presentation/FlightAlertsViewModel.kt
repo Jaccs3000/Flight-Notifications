@@ -12,7 +12,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
@@ -41,7 +40,6 @@ data class FlightAlertsUiState(
     val message: String? = null,
     val error: String? = null,
     val schedulingStatus: String = "Leyendo estado de programación…",
-    val notificationOpenSequence: Long = 0,
 )
 
 class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
@@ -55,22 +53,22 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     init {
         viewModelScope.launch {
             container.flightAlertRepository.alerts.collect { list ->
-                mutableState.update { it.copy(alerts = list) }
+                mutableState.value = mutableState.value.copy(alerts = list)
             }
         }
         viewModelScope.launch {
             container.flightAlertRepository.notifications.collect { list ->
-                mutableState.update { it.copy(notifications = list) }
+                mutableState.value = mutableState.value.copy(notifications = list)
             }
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val status = container.alertWorkScheduler.scheduleStatus()
-            mutableState.update { it.copy(schedulingStatus = status) }
+            mutableState.value = mutableState.value.copy(schedulingStatus = status)
         }
     }
 
     fun save(input: AlertInput, onSaved: () -> Unit = {}) {
-        validate(input)?.let { error -> mutableState.update { it.copy(error = error, message = null) }; return }
+        validate(input)?.let { error -> mutableState.value = mutableState.value.copy(error = error, message = null); return }
         viewModelScope.launch {
             runCatching {
                 container.executionMutex.withLock {
@@ -85,7 +83,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             maximum = input.maximumCop,
                             frequency = input.frequencyHours,
                             direct = input.directOnly,
-                            enabled = false,
+                            enabled = true,
                         )
                     } else {
                         existing.copy(
@@ -103,19 +101,21 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                     container.flightAlertRepository.save(candidate)
                 }
             }.onSuccess { saved ->
+                refreshAlertsNow()
                 val message = if (input.id == null) {
-                    "Alerta guardada pausada. Actívala cuando quieras programar revisiones."
+                    "Alerta guardada y activa. Android puede aplazar las revisiones automáticas; si las notificaciones están desactivadas, no se iniciarán búsquedas automáticas."
                 } else if (saved.enabled) {
                     "Alerta actualizada y activa. Si cambiaste ruta, fechas, escalas o máximo, se necesita una revisión nueva antes de usar el resultado anterior."
                 } else {
                     "Alerta actualizada y pausada."
                 }
-                mutableState.update { it.copy(message = message, error = null) }
+                mutableState.value = mutableState.value.copy(message = message, error = null)
                 container.flightDiagnosticLog.record("ui_action alert_saved alert_id=${saved.id.take(8)} criteria_version=${saved.criteriaVersion} policy_version=${saved.notificationPolicyVersion}")
+                container.alertWorkScheduler.ensureScheduled()
                 refreshSchedule()
                 onSaved()
             }.onFailure {
-                mutableState.update { it.copy(error = "No fue posible guardar la alerta.", message = null) }
+                mutableState.value = mutableState.value.copy(error = "No fue posible guardar la alerta.", message = null)
             }
         }
     }
@@ -125,17 +125,17 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
             val changed = container.executionMutex.withLock {
                 val alert = container.flightAlertRepository.find(id) ?: return@withLock false
                 if (enabled && LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))) {
-                    mutableState.update { it.copy(error = "La fecha de ida ya venció; edita la alerta antes de activarla.", message = null) }
+                    mutableState.value = mutableState.value.copy(error = "La fecha de ida ya venció; edita la alerta antes de activarla.", message = null)
                     return@withLock false
                 }
                 container.flightAlertRepository.setEnabled(id, enabled)
                 true
             }
             if (!changed) return@launch
-            mutableState.update { it.copy(
+            mutableState.value = mutableState.value.copy(
                 message = if (enabled) "Alerta activada. Android realizará las revisiones según la disponibilidad del sistema." else "Alerta pausada.",
                 error = null,
-            ) }
+            )
             container.flightDiagnosticLog.record("ui_action alert_enabled_changed alert_id=${id.take(8)} enabled=$enabled")
             container.alertWorkScheduler.ensureScheduled()
             refreshSchedule()
@@ -144,107 +144,84 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun requestReview(id: String) {
         if (mutableState.value.runningAlertId != null) return
-        mutableState.update { it.copy(reviewConfirmationId = id, error = null, message = null) }
+        mutableState.value = mutableState.value.copy(reviewConfirmationId = id, error = null, message = null)
     }
 
     fun dismissReviewConfirmation() {
-        mutableState.update { it.copy(reviewConfirmationId = null) }
+        mutableState.value = mutableState.value.copy(reviewConfirmationId = null)
     }
 
     fun confirmReview() {
         val id = mutableState.value.reviewConfirmationId ?: return
         val alert = mutableState.value.alerts.firstOrNull { it.alert.id == id }?.alert ?: return
-        val requestedAt = System.currentTimeMillis()
-        mutableState.update { it.copy(reviewConfirmationId = null, runningAlertId = id, error = null, message = null) }
+        mutableState.value = mutableState.value.copy(reviewConfirmationId = null, runningAlertId = id, error = null, message = null)
         activeReview = viewModelScope.launch {
             var completedResult: AlertSearchResult? = null
-            var reviewedAlert: FlightAlertEntity? = null
-            var coalescedWithRecentReview = false
             try {
                 val outcomes = container.serpApiRepository.runAlertBatch(
-                    alerts = emptyList(),
+                    alerts = listOf(alert),
                     maximumGets = com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_ALERT,
                     afterResults = { results ->
                         results.forEach { result ->
-                            val alertForReview = reviewedAlert ?: return@forEach
                             completedResult = result
-                            container.flightAlertRepository.recordManualAttempt(alertForReview, result.attemptAtMillis)
-                            val saved = container.flightAlertRepository.saveOutcome(alertForReview.id, result, alertForReview)
+                            val saved = container.flightAlertRepository.saveOutcome(alert.id, result, alert)
                             if (saved) {
-                                if (result.candidatesConsidered > 0) container.flightAlertRepository.advanceCandidateRotation(alertForReview)
-                                val latest = container.flightAlertRepository.find(alertForReview.id)
-                                if (alertForReview.enabled && latest?.enabled == true &&
-                                    latest.criteriaVersion == alertForReview.criteriaVersion &&
-                                    latest.notificationPolicyVersion == alertForReview.notificationPolicyVersion &&
+                                if (result.candidatesConsidered > 0) container.flightAlertRepository.advanceCandidateRotation(alert)
+                                val latest = container.flightAlertRepository.find(alert.id)
+                                if (alert.enabled && latest?.enabled == true &&
+                                    latest.criteriaVersion == alert.criteriaVersion &&
+                                    latest.notificationPolicyVersion == alert.notificationPolicyVersion &&
                                     result.status == "VERIFICADO"
                                 ) {
                                     val dispatch = container.notificationDispatcher.dispatchIfEligible(latest, result, container.flightAlertRepository)
                                     container.flightDiagnosticLog.record("manual_notification_dispatch alert_id=${id.take(8)} result=$dispatch")
-                                } else if (alertForReview.enabled && result.status == "VERIFICADO" && !container.notificationDispatcher.notificationsAllowed()) {
+                                } else if (alert.enabled && result.status == "VERIFICADO" && !container.notificationDispatcher.notificationsAllowed()) {
                                     container.flightDiagnosticLog.record("manual_notification_suppressed alert_id=${id.take(8)} cause=permission_or_channel_disabled")
                                 }
                             }
                         }
                     },
-                    selectAlerts = {
-                        // Resolve the entity only after acquiring the repository execution lock,
-                        // so edits/deletes made while this review waited cannot trigger stale GETs.
-                        val current = container.flightAlertRepository.find(id)
-                        when {
-                            current == null -> emptyList()
-                            com.flightnotifications.app.data.worker.AutomaticReviewPolicy.wasReviewedAfter(current, requestedAt) -> {
-                                coalescedWithRecentReview = true
-                                emptyList()
-                            }
-                            else -> {
-                                reviewedAlert = current
-                                listOf(current)
-                            }
-                        }
-                    },
                 )
                 val result = completedResult ?: outcomes.firstOrNull()
-                mutableState.update { it.copy(
-                    message = result?.let(::resultMessage) ?: if (coalescedWithRecentReview) {
-                        "La alerta ya se revisó mientras esta búsqueda esperaba; no se hicieron GET adicionales."
-                    } else {
-                        "La revisión finalizó sin resultado."
-                    },
+                container.flightAlertRepository.recordManualAttempt(alert, result?.attemptAtMillis ?: System.currentTimeMillis())
+                mutableState.value = mutableState.value.copy(
+                    message = result?.let(::resultMessage) ?: "La revisión finalizó sin resultado.",
                     error = if (result?.status == "ERROR") result.error?.let(::errorMessage) else null,
-                ) }
-                container.flightDiagnosticLog.record("ui_action manual_alert_review_complete alert_id=${id.take(8)} status=${result?.status ?: if (coalescedWithRecentReview) "COALESCED" else "UNKNOWN"} flight_gets=${result?.flightGetsStarted ?: 0}")
+                )
+                container.flightDiagnosticLog.record("ui_action manual_alert_review_complete alert_id=${id.take(8)} status=${result?.status ?: "UNKNOWN"} flight_gets=${result?.flightGetsStarted ?: 0}")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 container.flightDiagnosticLog.record("manual_alert_review_failed alert_id=${id.take(8)} category=UNEXPECTED")
-                mutableState.update { it.copy(error = "No se pudo completar la revisión manual. Revisa el registro de vuelos.", message = null) }
+                mutableState.value = mutableState.value.copy(error = "No se pudo completar la revisión manual. Revisa el registro de vuelos.", message = null)
             } finally {
-                mutableState.update { it.copy(runningAlertId = null) }
+                mutableState.value = mutableState.value.copy(runningAlertId = null)
                 activeReview = null
             }
         }
     }
 
-    fun requestDelete(id: String) { mutableState.update { it.copy(deletingAlertId = id) } }
-    fun dismissDelete() { mutableState.update { it.copy(deletingAlertId = null) } }
+    fun requestDelete(id: String) { mutableState.value = mutableState.value.copy(deletingAlertId = id) }
+    fun dismissDelete() { mutableState.value = mutableState.value.copy(deletingAlertId = null) }
     fun confirmDelete() {
         val id = mutableState.value.deletingAlertId ?: return
-        mutableState.update { it.copy(deletingAlertId = null) }
+        mutableState.value = mutableState.value.copy(deletingAlertId = null)
         viewModelScope.launch {
             container.executionMutex.withLock { container.flightAlertRepository.remove(id) }
+            refreshAlertsNow()
             container.flightDiagnosticLog.record("ui_action alert_deleted alert_id=${id.take(8)}")
-            mutableState.update { it.copy(message = "Alerta eliminada. El presupuesto global de consultas se conserva.", error = null) }
+            mutableState.value = mutableState.value.copy(message = "Alerta eliminada. El presupuesto global de consultas se conserva.", error = null)
         }
     }
 
     fun requestClearNotifications() {
-        mutableState.update { it.copy(showClearNotificationsConfirmation = true) }
+        mutableState.value = mutableState.value.copy(showClearNotificationsConfirmation = true)
     }
     fun dismissClearNotifications() {
-        mutableState.update { it.copy(showClearNotificationsConfirmation = false) }
+        mutableState.value = mutableState.value.copy(showClearNotificationsConfirmation = false)
     }
     fun confirmClearNotifications() {
-        mutableState.update { it.copy(showClearNotificationsConfirmation = false) }
+        mutableState.value = mutableState.value.copy(showClearNotificationsConfirmation = false)
         viewModelScope.launch {
             container.executionMutex.withLock {
                 container.notificationDispatcher.cancelAllVisible()
@@ -258,25 +235,19 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             container.alertWorkScheduler.ensureScheduled()
             val status = container.alertWorkScheduler.scheduleStatus()
-            mutableState.update { it.copy(schedulingStatus = status) }
+            mutableState.value = mutableState.value.copy(schedulingStatus = status)
             container.flightDiagnosticLog.record("scheduler_diagnostic_check result=${status.replace(Regex("[^A-Za-z0-9 _-]"), " ").take(100)} api_calls=0")
         }
     }
 
     fun setNotificationOpenAlert(id: String?) {
         if (id == null) return
-        mutableState.update { current -> current.copy(
-            selectedAlertId = id,
-            notificationOpenSequence = current.notificationOpenSequence + 1,
-            message = null,
-            error = null,
-        ) }
+        mutableState.value = mutableState.value.copy(selectedAlertId = id, message = "Alerta seleccionada: ${id.take(8)}")
     }
 
-    fun clearSelectedAlert() { mutableState.update { it.copy(selectedAlertId = null) } }
-    fun clearFeedback() { mutableState.update { it.copy(message = null, error = null) } }
+    fun clearSelectedAlert() { mutableState.value = mutableState.value.copy(selectedAlertId = null) }
     fun notificationPermissionDenied() {
-        mutableState.update { it.copy(error = "Activa las notificaciones de Flight Notifications en Ajustes para habilitar avisos de ofertas.", message = null) }
+        mutableState.value = mutableState.value.copy(error = "Activa las notificaciones de Flight Notifications en Ajustes para habilitar avisos de ofertas.", message = null)
     }
 
     private fun validate(input: AlertInput): String? {
@@ -321,9 +292,13 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun refreshSchedule() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val status = container.alertWorkScheduler.scheduleStatus()
-            mutableState.update { it.copy(schedulingStatus = status) }
+            mutableState.value = mutableState.value.copy(schedulingStatus = container.alertWorkScheduler.scheduleStatus())
         }
+    }
+
+    private suspend fun refreshAlertsNow() {
+        val latest = container.flightAlertRepository.currentAlerts()
+        mutableState.value = mutableState.value.copy(alerts = latest)
     }
 
     companion object {

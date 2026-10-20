@@ -13,8 +13,14 @@ abstract class FlightAlertDao {
     @Query("SELECT * FROM flight_alerts ORDER BY enabled DESC, createdAt DESC")
     abstract fun observeAlerts(): Flow<List<FlightAlertEntity>>
 
+    @Query("SELECT * FROM flight_alerts ORDER BY enabled DESC, createdAt DESC")
+    abstract suspend fun getAlerts(): List<FlightAlertEntity>
+
     @Query("SELECT * FROM flight_alert_results")
     abstract fun observeResults(): Flow<List<FlightAlertResultEntity>>
+
+    @Query("SELECT * FROM flight_alert_results")
+    abstract suspend fun getResults(): List<FlightAlertResultEntity>
 
     @Query("SELECT * FROM sent_notifications ORDER BY sentAt DESC LIMIT 100")
     abstract fun observeNotifications(): Flow<List<SentNotificationEntity>>
@@ -40,11 +46,11 @@ abstract class FlightAlertDao {
     @Query("UPDATE flight_alerts SET nextDueAt = :nextDueAt WHERE id = :id AND enabled = 1")
     abstract suspend fun deferEnabledAlert(id: String, nextDueAt: Long): Int
 
-    @Query("UPDATE flight_alerts SET lastAttemptAt = :attemptAt, lastReviewCompletedAt = :completedAt WHERE id = :id AND criteriaVersion = :criteriaVersion")
-    abstract suspend fun recordManualAttemptIfCurrent(id: String, criteriaVersion: Long, attemptAt: Long, completedAt: Long): Int
+    @Query("UPDATE flight_alerts SET lastAttemptAt = :attemptAt WHERE id = :id AND criteriaVersion = :criteriaVersion")
+    abstract suspend fun recordManualAttemptIfCurrent(id: String, criteriaVersion: Long, attemptAt: Long): Int
 
-    @Query("UPDATE flight_alerts SET lastAttemptAt = :attemptAt, lastReviewCompletedAt = :completedAt, lastAutomaticAttemptAt = :attemptAt, nextDueAt = :nextDueAt WHERE id = :id AND criteriaVersion = :criteriaVersion AND enabled = 1")
-    abstract suspend fun recordAutomaticAttemptIfCurrent(id: String, criteriaVersion: Long, attemptAt: Long, nextDueAt: Long, completedAt: Long): Int
+    @Query("UPDATE flight_alerts SET lastAttemptAt = :attemptAt, lastAutomaticAttemptAt = :attemptAt, nextDueAt = :nextDueAt WHERE id = :id AND criteriaVersion = :criteriaVersion AND enabled = 1")
+    abstract suspend fun recordAutomaticAttemptIfCurrent(id: String, criteriaVersion: Long, attemptAt: Long, nextDueAt: Long): Int
 
     @Query("UPDATE flight_alerts SET candidateRotation = candidateRotation + 1 WHERE id = :id AND criteriaVersion = :criteriaVersion")
     abstract suspend fun advanceCandidateRotation(id: String, criteriaVersion: Long): Int

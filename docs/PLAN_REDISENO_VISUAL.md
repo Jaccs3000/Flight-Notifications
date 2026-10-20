@@ -1,14 +1,14 @@
 # Plan para aplicar los bocetos a la aplicación Android
 
-Fecha: 20 de octubre de 2026. Estado: implementado, validado y empaquetado en V1.0.6.
+Fecha: 20 de octubre de 2026. Estado: plan preparado; ejecución pendiente.
 Objetivo: reproducir las seis imágenes finales en composición, colores, tipografía, iconos, espaciados y comportamiento de los controles, usando los datos reales de la aplicación.
 
 ## 1. Referencias y límites
 
-- La referencia visual son los PNG finales de la [propuesta v1](design/v1/README.md). Los PNG prevalecen sobre diferencias menores entre el dibujo y su prompt.
+- La referencia visual son los PNG finales de la [propuesta v1](../outputs/diseno-propuesta-v1/README.md). Los PNG prevalecen sobre diferencias menores entre el dibujo y su prompt.
 - Los requisitos funcionales aprobados y las instrucciones posteriores del propietario siguen gobernando precios, consultas, cuota, avisos, datos y seguridad.
-- Base técnica: V1.0.5 / Room v5, commit base `56473df`; entrega V1.0.6 / Room v5, actualmente en `C:\Flight-Notifications-main-push-staging`. Al iniciar, confirmar que se desarrolla sobre esa fuente validada o sobre una posterior que conserve sus correcciones.
-- Las referencias están incorporadas en `docs/design/v1/` y se enlazan con rutas relativas dentro del repositorio.
+- Base técnica: V1.0.5 / Room v5, commit `56473df`, actualmente en `C:\Flight-Notifications-main-push-staging`. Al iniciar, confirmar que se desarrolla sobre esa fuente validada o sobre una posterior que conserve sus correcciones.
+- Las imágenes están en `C:\Flight-Notifications-main\outputs\diseno-propuesta-v1`. Incorporar las referencias al checkout de desarrollo con rutas relativas antes de implementar.
 - El rediseño se realiza en Kotlin y Jetpack Compose, aprovechando los repositorios y ViewModels existentes. La reorganización visual no necesita nuevos datos de negocio persistentes.
 - Los saldos, precios, fechas, cantidades de combinaciones y horas de las imágenes son ejemplos; en producción se sustituyen por el estado real. No fijar esos valores en las pantallas.
 - Las barras de estado y navegación del sistema las dibuja Android. Dentro del área de la app se reproduce el diseño de referencia, respetando los márgenes del sistema y del teclado.
@@ -19,12 +19,12 @@ Objetivo: reproducir las seis imágenes finales en composición, colores, tipogr
 
 | Tipo | Pantalla | Referencia |
 |---|---|---|
-| Principal | Alertas | [01-alertas.png](design/v1/01-alertas.png) |
-| Secundaria | Crear / editar alerta | [02-crear-editar-alerta.png](design/v1/02-crear-editar-alerta.png) |
-| Secundaria | Detalle y resultados | [03-detalle-resultados.png](design/v1/03-detalle-resultados.png) |
-| Principal | Ajustes | [04-ajustes.png](design/v1/04-ajustes.png) |
-| Secundaria | Diagnóstico | [05-diagnostico.png](design/v1/05-diagnostico.png) |
-| Principal | Actividad | [06-actividad.png](design/v1/06-actividad.png) |
+| Principal | Alertas | [01-alertas.png](../outputs/diseno-propuesta-v1/01-alertas.png) |
+| Secundaria | Crear / editar alerta | [02-crear-editar-alerta.png](../outputs/diseno-propuesta-v1/02-crear-editar-alerta.png) |
+| Secundaria | Detalle y resultados | [03-detalle-resultados.png](../outputs/diseno-propuesta-v1/03-detalle-resultados.png) |
+| Principal | Ajustes | [04-ajustes.png](../outputs/diseno-propuesta-v1/04-ajustes.png) |
+| Secundaria | Diagnóstico | [05-diagnostico.png](../outputs/diseno-propuesta-v1/05-diagnostico.png) |
+| Principal | Actividad | [06-actividad.png](../outputs/diseno-propuesta-v1/06-actividad.png) |
 
 La barra inferior contiene Alertas, Actividad y Ajustes, con los mismos iconos, tamaños y selección en las tres pantallas. Formulario, detalle y diagnóstico muestran una acción de volver y ocultan esa barra.
 
@@ -196,3 +196,4 @@ El rediseño queda terminado cuando:
 ## 5. Primera tarea al ejecutar
 
 Fijar las referencias y medidas (paso 1), crear el tema/componentes (paso 2) y conectar la navegación (paso 3). Después implementar y comparar Alertas y Crear/editar antes de extender los mismos componentes al resto. Así se resuelven las decisiones visuales comunes una sola vez.
+

@@ -7,7 +7,7 @@
 **Proyecto:** `C:\Flight Notifications`  
 **Versión prevista de la APK básica:** `0.1.0`, `versionCode = 1`  
 **Nombre visible propuesto:** `Prueba de vuelos — SerpApi`  
-**Estado de esta instantánea:** plan de PoC histórico; la implementación básica se completó en etapas anteriores. La app vigente es V1.0.1 y la evidencia actual está en [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md). No usar este estado/entrega de PoC para inferir el estado de la versión actual.
+**Estado de esta instantánea:** plan de PoC histórico; la implementación básica se completó en etapas anteriores. La app vigente es V1.0.1 y la evidencia actual está en [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md). No usar este estado/entrega de PoC para inferir el estado de la versión actual.  
 **Fuente principal de requisitos:** [REQUIREMENTS.md](REQUIREMENTS.md), versión 1.4, especialmente las secciones 4, 7, 8, 12, 13 y 17.
 
 ## 1. Propósito y relación con la aplicación completa

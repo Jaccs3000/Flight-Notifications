@@ -26,12 +26,7 @@ class AppContainer(context: Context) {
         applicationContext,
         ProbeDatabase::class.java,
         "flight_probe.db",
-    ).addMigrations(
-        ProbeDatabase.MIGRATION_1_2,
-        ProbeDatabase.MIGRATION_2_3,
-        ProbeDatabase.MIGRATION_3_4,
-        ProbeDatabase.MIGRATION_4_5,
-    ).build()
+    ).addMigrations(ProbeDatabase.MIGRATION_1_2, ProbeDatabase.MIGRATION_2_3, ProbeDatabase.MIGRATION_3_4).build()
     val flightAlertDao: FlightAlertDao = database.flightAlertDao()
 
     val executionMutex = Mutex()

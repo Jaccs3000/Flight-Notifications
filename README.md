@@ -49,7 +49,7 @@ Una tarifa se presenta como total observado sólo si los datos asociados de ida 
 
 La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=7` y `versionName=1.0.5`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
 
-El APK release para uso habitual se entrega en `G:\Mi unidad\APK android car\flight-notifications-1.0.5-release.apk`; el debug y `SHA256SUMS.txt` quedan en esa carpeta. También se conservan copias descargables en `outputs\`.
+La release 1.0.5 firmada y su APK debug están en `outputs\release-1.0.5\`; también hay copias descargables y `SHA256SUMS.txt` en `outputs\`. Esta compilación se guardó localmente y no se copió a Google Drive.
 
 ## Privacidad y alcance
 

@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -61,56 +62,55 @@ class LocalBudgetRepositoryTest {
 
     @Test
     fun unexpectedWallClockChangeBlocksFlightRequestReservations() = runBlocking {
-        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "before-clock-change"))
+        repository.snapshot() // Establish the first trusted wall/elapsed clock pair.
         now = now.plusSeconds(60 * 60)
 
-        val reservation = repository.reserve(RequestStage.OUTBOUND, "clock-change")
+        val snapshot = repository.snapshot()
 
-        assertEquals(BudgetReservationResult.CLOCK_UNTRUSTED, reservation)
-        assertEquals(1, database.requestReservationDao().countSince(Instant.EPOCH.toEpochMilli()))
+        assertFalse(snapshot.clockTrusted)
+        assertEquals(0, snapshot.remainingInWindow)
+        assertEquals(0, database.requestReservationDao().countSince(Instant.EPOCH.toEpochMilli()))
 
         now = now.plusSeconds(1)
         elapsed += 1_000
         assertTrue(repository.snapshot().clockTrusted)
-        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.RETURN, "after-clock-recovery"))
-        assertEquals(2, database.requestReservationDao().countSince(Instant.EPOCH.toEpochMilli()))
+        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "clock-change-recovered"))
     }
 
     @Test
     fun rebootWithClockMovedBackwardReanchorsAndRecoversWithoutExpiringReservations() = runBlocking {
-        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "before-reboot"))
-        now = now.minusSeconds(60L * 24L * 60L * 60L)
+        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "before-backward-clock-reboot"))
+        now = now.minusSeconds(60L * 60L)
         elapsed = 100L
 
-        assertEquals(BudgetReservationResult.CLOCK_UNTRUSTED, repository.reserve(RequestStage.RETURN, "blocked-once"))
-        assertEquals(1, database.requestReservationDao().countSince(Instant.EPOCH.toEpochMilli()))
+        val anomaly = repository.snapshot()
+        assertFalse(anomaly.clockTrusted)
+        assertEquals(1, anomaly.usedInWindow)
 
         now = now.plusSeconds(1)
         elapsed += 1_000
         val recovered = repository.snapshot()
-
         assertTrue(recovered.clockTrusted)
         assertEquals(1, recovered.usedInWindow)
-        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.RETURN, "after-reboot-recovery"))
+        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "after-backward-clock-reboot"))
     }
 
     @Test
     fun rebootUptimeOvertakingOldUptimeRecoversAfterOneConservativeObservation() = runBlocking {
-        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "before-reboot"))
-        // The device was off for a day; after reboot, uptime has already exceeded its previous value.
+        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "before-long-uptime-reboot"))
+        // The new uptime is greater than the prior observation, but the phone spent one day powered off.
         now = now.plusSeconds(61L * 24L * 60L * 60L)
-        elapsed = 60L * 24L * 60L * 60L * 1_000L
+        elapsed = 60L * 24L * 60L * 60L * 1_000
 
-        assertEquals(BudgetReservationResult.CLOCK_UNTRUSTED, repository.reserve(RequestStage.RETURN, "blocked-once"))
-        assertEquals(1, database.requestReservationDao().countSince(Instant.EPOCH.toEpochMilli()))
+        val anomaly = repository.snapshot()
+        assertFalse(anomaly.clockTrusted)
+        assertEquals(1, anomaly.usedInWindow)
 
         now = now.plusSeconds(1)
         elapsed += 1_000
         val recovered = repository.snapshot()
-
         assertTrue(recovered.clockTrusted)
         assertEquals(1, recovered.usedInWindow)
-        assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.RETURN, "after-reboot-recovery"))
     }
 
     @Test

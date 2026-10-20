@@ -38,3 +38,4 @@ data class AlertSearchResult(
     val flightGetsStarted: Int,
     val googleFlightsUrl: String? = null,
 )
+

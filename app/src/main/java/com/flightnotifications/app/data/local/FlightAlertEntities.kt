@@ -21,7 +21,6 @@ data class FlightAlertEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val lastAttemptAt: Long? = null,
-    val lastReviewCompletedAt: Long? = null,
     val lastAutomaticAttemptAt: Long? = null,
     val nextDueAt: Long? = null,
     @ColumnInfo(defaultValue = "1") val criteriaVersion: Long = 1,

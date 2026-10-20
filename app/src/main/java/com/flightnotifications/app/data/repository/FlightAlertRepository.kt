@@ -26,6 +26,11 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
     }
     val notifications = dao.observeNotifications()
 
+    suspend fun currentAlerts(): List<AlertWithResult> {
+        val byId = dao.getResults().associateBy { it.alertId }
+        return dao.getAlerts().map { AlertWithResult(it, byId[it.id]) }
+    }
+
     suspend fun initializeExample() {
         val now = System.currentTimeMillis()
         dao.initializeExampleIfNewInstall(
@@ -125,11 +130,11 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
         return true
     }
 
-    suspend fun recordManualAttempt(alert: FlightAlertEntity, attemptAt: Long, completedAt: Long = System.currentTimeMillis()) =
-        dao.recordManualAttemptIfCurrent(alert.id, alert.criteriaVersion, attemptAt, completedAt)
+    suspend fun recordManualAttempt(alert: FlightAlertEntity, attemptAt: Long) =
+        dao.recordManualAttemptIfCurrent(alert.id, alert.criteriaVersion, attemptAt)
 
-    suspend fun recordAutomaticAttempt(alert: FlightAlertEntity, attemptAt: Long, nextDueAt: Long, completedAt: Long) =
-        dao.recordAutomaticAttemptIfCurrent(alert.id, alert.criteriaVersion, attemptAt, nextDueAt, completedAt)
+    suspend fun recordAutomaticAttempt(alert: FlightAlertEntity, attemptAt: Long, nextDueAt: Long) =
+        dao.recordAutomaticAttemptIfCurrent(alert.id, alert.criteriaVersion, attemptAt, nextDueAt)
 
     suspend fun advanceCandidateRotation(alert: FlightAlertEntity) =
         dao.advanceCandidateRotation(alert.id, alert.criteriaVersion)

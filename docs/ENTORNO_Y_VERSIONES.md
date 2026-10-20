@@ -1,5 +1,9 @@
 # Entorno y versiones
 
+## Entrega vigente: V1.0.6
+
+La release actual está en `outputs/flight-notifications-1.0.6-release.apk`, paquete `com.flightnotifications.app`, `versionCode=8`, firmada con la clave RSA 3072 estable. `apksigner verify` confirmó firma v2 y el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`; `aapt` confirmó el paquete y la versión. Los hashes debug/release vigentes están en [SHA256SUMS.txt](../outputs/SHA256SUMS.txt). La compilación y `lintVitalRelease` finalizaron correctamente; no se ejecutaron pruebas automatizadas ni se instaló esta versión en teléfono. No se copió a Google Drive.
+
 Entorno verificado el 19 de octubre de 2026 al generar V1 y revalidado durante la auditoría/build de V1.0.2.
 
 ## Equipo de desarrollo
@@ -49,7 +53,7 @@ La ubicación del JDK puede variar entre equipos; el script busca `JAVA_HOME` y 
 
 Las versiones y su evidencia primaria se mantienen en el catálogo `gradle/libs.versions.toml`. La documentación de publicación consultada incluye las [notas de AGP 9.4](https://developer.android.com/build/releases/agp-9-4-0-release-notes), la guía de [Kotlin integrado en AGP](https://developer.android.com/build/migrate-to-built-in-kotlin), las [versiones de Kotlin](https://kotlinlang.org/docs/releases.html), la [BOM de Compose](https://developer.android.com/develop/ui/compose/bom/bom-mapping), las páginas oficiales de [Room](https://developer.android.com/jetpack/androidx/releases/room) y [SerpApi Account API](https://serpapi.com/account-api), más los repositorios oficiales de [OkHttp](https://github.com/square/okhttp) y [Retrofit](https://github.com/square/retrofit).
 
-## Resultado de compilación
+## Resultado histórico de compilación V1.0.2
 
 La release actual es `G:\Mi unidad\APK android car\flight-notifications-1.0.2-release.apk`, package `com.flightnotifications.app`, `versionCode=4`, `versionName=1.0.2`, firmada con la misma clave RSA 3072 estable. `apksigner verify` la validó; el SHA-256 es `bce12fc4c99d6bee8e6029217756494e4de1341074dc29ed1de26fa2a17658ef`. Debug SHA-256: `25d691dea52e2ac8ef575d1e53bfefd5dcff4edf6a1ab9f5b2eefb5f0bf4b66e`. Ambas copias G: coinciden con los artefactos de `outputs/`; el manifiesto vigente está en `SHA256SUMS.txt`.
 

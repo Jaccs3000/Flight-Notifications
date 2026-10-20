@@ -1,9 +1,9 @@
 # Plan técnico de la app definitiva de alertas de vuelos
 
-**Versión del plan:** 1.2, auditada y delimitada al alcance aprobado el 19 de octubre de 2026.<br>
-**Proyecto:** `C:\Flight-Notifications-main`.<br>
-**Producto:** aplicación Android personal en español, distribuida como APK.<br>
-**Estado:** implementación funcional V1. La fuente Room v5 está empaquetada como V1.0.5 (`versionCode=7`); debug/release y hashes se copiaron a la ruta de entrega y se verificó la firma estable. La instalación de V1.0.5 sobre una instalación previa y la aceptación en teléfono físico siguen pendientes; véase [informe de implementación](docs/INFORME_IMPLEMENTACION_V1.md).<br>
+**Versión del plan:** 1.2, auditada y delimitada al alcance aprobado el 19 de octubre de 2026.  
+**Proyecto:** `C:\Flight-Notifications-main`.  
+**Producto:** aplicación Android personal en español, distribuida como APK.  
+**Estado:** implementación funcional V1. La fuente Room v4 está empaquetada como V1.0.4 (`versionCode=6`); debug/release y hashes se copiaron a la ruta de entrega y se verificó la firma estable. La instalación de V1.0.4 sobre una instalación previa y la aceptación en teléfono físico siguen pendientes; véase [informe de implementación](docs/INFORME_IMPLEMENTACION_V1.md).  
 **Requisitos funcionales:** [REQUIREMENTS.md](REQUIREMENTS.md), V1.4, con las instrucciones posteriores del propietario indicadas en la sección 1.
 
 Este documento concreta la implementación paso a paso y los criterios para declarar terminada la V1. Las secciones 3–11 contienen las reglas; los pasos de la sección 12 las convierten en entregables y la sección 13 define cómo comprobarlas. Un criterio de aceptación pendiente no equivale a una función ya implementada.
@@ -42,18 +42,18 @@ La matriz T01–T33 verifica estas funciones y sus errores; **no amplía el prod
 
 ### 2.1. Código y pruebas locales
 
-La implementación actual incluye la pantalla del PoC para diagnóstico, CRUD de alertas nacionales, Room con migraciones v1→v5, catálogo de aeropuertos y operadores, presupuesto compartido, búsquedas manuales y por lote, WorkManager único, notificaciones locales con reintento idempotente por evento, diagnóstico de programación, almacenamiento de credencial con Keystore y dos registros saneados con copiar/limpiar. En cada revisión avisa una vez la tarifa verificada más baja bajo el máximo, incluso si se repite un itinerario o importe; los IDs de evento solo evitan duplicar un mismo despacho al recuperarlo. Si falta permiso/canal de notificaciones, el Worker conserva el turno sin gastar GET; una revisión manual sigue disponible. Las revisiones manual y automática coalescen una consulta superpuesta sin cambiar el turno automático. No muestra horarios de vuelos. Los APK V1.0.5 firmados/copiados están verificados; la evidencia completa y los límites de aceptación están en el informe V1.
+La implementación actual incluye la pantalla del PoC para diagnóstico, CRUD de alertas nacionales, Room con migraciones v1→v4, catálogo de aeropuertos y operadores, presupuesto compartido, búsquedas manuales y por lote, WorkManager único, notificaciones locales con reintento idempotente por evento, diagnóstico de programación, almacenamiento de credencial con Keystore y dos registros saneados con copiar/limpiar. En cada revisión avisa una vez la tarifa verificada más baja bajo el máximo, incluso si se repite un itinerario o importe; los IDs de evento solo evitan duplicar un mismo despacho al recuperarlo. No muestra horarios de vuelos. Los APK V1.0.4 firmados/copiados están verificados; la evidencia completa y los límites de aceptación están en el informe V1.
 
 | Comprobación existente | Evidencia local o procedencia | Alcance |
 |---|---|---|
-| Pruebas JVM: 48, sin fallos ni errores ni omisiones | XML en `app/build/test-results/testDebugUnitTest/`, ejecución 20-10-2026 | Parser, HTTP simulado, validación, cuotas, alertas, deduplicación, recuperación, reloj, y coalescencia de revisiones simultáneas |
-| Pruebas instrumentadas: 28, sin fallos ni errores | XML en `app/build/outputs/androidTest-results/connected/debug/TEST-Pixel_5(AVD) - 16.xml`, 20-10-2026 COT | Compose/CRUD, Room v1→v5, migración desde v2, presupuesto/reloj, coalescencia manual, outbox, WorkManager y Keystore; emulador Pixel 5, API 36 |
+| Pruebas JVM: 45, sin fallos ni errores ni omisiones | XML en `app/build/test-results/testDebugUnitTest/`, ejecución 20-10-2026 | Parser, HTTP simulado, validación, cuotas, alertas, deduplicación, recuperación y concurrencia; incluye regresión de repetir tarifa en nueva revisión con idempotencia por revisión |
+| Pruebas instrumentadas: 24, sin fallos ni errores | XML en `app/build/outputs/androidTest-results/connected/debug/TEST-Pixel_5(AVD) - 16.xml`, 20-10-2026 COT | Compose/CRUD, Room v1→v4, presupuesto concurrente, outbox, WorkManager y Keystore; emulador Pixel 5, API 36 |
 | Compilación y Lint debug/release | `outputs/build-final.log` y ejecución Gradle del 20-10-2026 | `lintDebug` y `lintRelease` aprobados sin errores; Gradle mantiene avisos de APIs/declaraciones deprecadas |
-| Migración y persistencia | `FlightAlertMigrationTest` y `FlightAlertDaoTest` | v1→v5 conserva presupuesto/reloj y añade finalización de revisión sin datos iniciales; una falla conserva precio previo, opciones verificadas y criterios; no resembra ejemplo y mantiene idempotencia de eventos |
-| Instalación/update del release | `docs/INFORME_IMPLEMENTACION_V1.md` | 1.0.1→1.0.2 actualizado en AVD. Para 1.0.5 se verificaron firma estable, hashes y versionCode ascendente; falta instalar esta versión sobre la anterior |
+| Migración y persistencia | `FlightAlertMigrationTest` y `FlightAlertDaoTest` | v1→v4 conserva presupuesto/reloj; una falla conserva precio previo, opciones verificadas y criterios; no resembra ejemplo y mantiene idempotencia de eventos |
+| Instalación/update del release | `docs/INFORME_IMPLEMENTACION_V1.md` | 1.0.1→1.0.2 actualizado en AVD. Para 1.0.4 se verificaron firma estable y versionCode ascendente; falta instalar esta versión sobre la anterior |
 | Credencial y capturas | `KeystoreCredentialStore.kt`, manifest y `MainActivity.kt` | AES-GCM/Keystore, backup desactivado, capturas permitidas |
 
-Las pruebas actuales se ejecutaron sobre la fuente de V1.0.5: 48 pruebas JVM y 28 instrumentadas en Pixel 5 AVD / API 36, todas aprobadas; también pasaron `lintDebug` y `lintRelease`. Incluyen reanclaje del reloj tras anomalías, suspensión automática sin permiso, y coalescencia de revisiones que terminan mientras la otra espera el bloqueo; la búsqueda manual conserva sin cambios el turno automático. La suite usa respuestas simuladas y no valida llamadas reales adicionales a SerpApi.
+Las pruebas se ejecutaron sobre la fuente de V1.0.4: 45 pruebas JVM y 24 instrumentadas en Pixel 5 AVD / API 36, todas aprobadas; también pasaron `lintDebug` y `lintRelease`. La regresión comprueba la nueva preferencia de repetir el mismo precio en una revisión distinta sin duplicar reintentos del mismo evento. Esta suite usa respuestas simuladas y no valida llamadas reales adicionales a SerpApi.
 
 Las pruebas instrumentadas informan fixtures locales y cero consultas de vuelos a SerpApi durante la implementación. No prueban Doze/reinicio en el teléfono del propietario; ese escenario requiere su dispositivo físico y queda explícito en el informe V1.
 
@@ -312,7 +312,7 @@ Si se usa estado pendiente, recuperarlo tras interrupción usando el mismo ident
 
 Un único trabajo periódico coordinador, por ejemplo cada hora, con trabajo único y `NetworkType.CONNECTED`. No un Worker por alerta, alarmas exactas ni servicio foreground permanente. Registrar sólo alertas activas cuyo **turno de consulta** esté vencido; distinguirlas de las alertas con **fecha de viaje** vencida. Si ninguna requiere revisión, no llamar a SerpApi.
 
-Las frecuencias 6/8/12/24 h son objetivos; Android puede aplazar trabajo por Doze/batería. Persistir turno y ejecución real, establecer backoff acotado y evitar una recuperación que ejecute en ráfaga todos los turnos perdidos. La búsqueda manual no reactiva la alerta ni consume/elimina silenciosamente su turno automático. Si una revisión de la misma alerta termina mientras otra espera el bloqueo, coalesce esa petición superpuesta con su resultado reciente para evitar GET duplicados; una petición manual posterior sigue disponible. Persistir el instante de finalización para coordinar Worker y UI aun si esperan el bloqueo en orden distinto; no depender solo de serializar ambas búsquedas.
+Las frecuencias 6/8/12/24 h son objetivos; Android puede aplazar trabajo por Doze/batería. Persistir turno y ejecución real, establecer backoff acotado y evitar una recuperación que ejecute en ráfaga todos los turnos perdidos. La búsqueda manual no reactiva la alerta ni consume/elimina silenciosamente su turno automático; puede compartir un resultado simultáneo compatible para evitar GET duplicados. Definir y probar esa coordinación con IDs/versión de revisión y los tiempos, no depender sólo de que un mutex serialice dos búsquedas completas.
 
 Como política técnica inicial, al activar dejar el turno automático disponible para el siguiente barrido y, tras una revisión automática completada, calcular el siguiente objetivo desde su finalización real más la frecuencia, sin acumular turnos históricos. Un bloqueo de cuenta/red/cuota usa un próximo intento con backoff, sin convertir el tick horario en consultas constantes. Cambiar frecuencia recalcula el turno desde la última ejecución automática, o desde la activación si aún no existe. Esta política puede ajustarse técnicamente conservando las frecuencias aprobadas, la independencia de la búsqueda manual y el límite de cuota; no añade opciones de programación al formulario.
 
@@ -451,7 +451,7 @@ Estos casos son criterios de aceptación del producto. El estado actual de cada 
 | T18 | Cuenta falla antes de lote con saldo antiguo/cupo local: cero GET; recuperación sólo tras nueva cuenta válida | §7, §13.26a |
 | T19 | Reservar antes de cada GET, cuenta no descuenta, timeout conserva reserva, capacidad del lote baja, 200 local/reducido, justicia entre alertas | §7, §13.16/17/26b |
 | T20 | Ventana de cuota, cambio de hora, reinicio/tiempo apagado, reloj incierto bloquea, cambio de key o APK no resetea | §7/8, §18.2 |
-| T21 | Manual y Worker simultáneos: coalescer una solicitud superpuesta, sin mover el turno; cancelar/editar/eliminar durante HTTP, resultado desactualizado no sobrescribe | §6/7, §13.18 |
+| T21 | Manual y Worker simultáneos: sin GET ni eventos duplicados; cancelar/editar/eliminar durante HTTP, resultado desactualizado no sobrescribe | §6/7, §13.18 |
 | T22 | Atomicidad del mecanismo de despacho elegido: interrupción entre notify/confirmación, permiso revocado y datos antiguos; recuperación de pendiente sólo si ese diseño se usa | §5.4 atomicidad, §13.18/30 |
 | T23 | Offline, timeout, 401/403/429/5xx, JSON/errores de negocio; sin bucle/polling ni fuga de excepciones o URLs | §8/11/13 |
 | T24 | Worker único, frecuencia/turno justo, sin peticiones si no hay alertas debidas, constraints y backoff; comprobar programación cuesta cero | §6/7, §9.5 |
@@ -471,7 +471,7 @@ Para T25, WorkManager Test y un worker con fakes comprueban planificación sin c
 
 ### 14.1. Identidad y firma
 
-Release actual: `applicationId=com.flightnotifications.app`, `versionCode=7`, `versionName=1.0.5`. Debug usa `.debug` y datos separados; no es una actualización instalable sobre release. Para cada versión nueva, aumentar `versionCode`, documentar nombre de versión y mantener el mismo certificado release.
+Release actual: `applicationId=com.flightnotifications.app`, `versionCode=6`, `versionName=1.0.4`. Debug usa `.debug` y datos separados; no es una actualización instalable sobre release. Para cada versión nueva, aumentar `versionCode`, documentar nombre de versión y mantener el mismo certificado release.
 
 La firma privada existente vive fuera del proyecto y se administra con `scripts/Release-Signing.ps1`; `scripts/Backup-ReleaseSigning.ps1` proporciona copia protegida. Conservar una copia segura recuperable de clave y credenciales. Si falta la clave de una instalación ya entregada, no crear silenciosamente otra pretendiendo que actualiza: recuperar la original o informar el bloqueo.
 

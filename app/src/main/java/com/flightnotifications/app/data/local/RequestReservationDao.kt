@@ -64,9 +64,9 @@ abstract class RequestReservationDao {
     }
 
     /**
-     * Reject the anomalous observation but remember it as the new baseline. Without reanchoring,
-     * one clock correction or reboot could leave every future reservation blocked forever.
-     * Keep the effective quota clock frozen so an anomaly cannot expire old reservations early.
+     * Reject this observation, but persist a new wall/uptime baseline while freezing the
+     * conservative budget clock. Without re-anchoring, a reboot followed by a backward clock
+     * correction (or an uptime that overtakes the previous uptime) would look anomalous forever.
      */
     private suspend fun reanchorAfterClockAnomaly(
         previous: BudgetClockObservationEntity,
