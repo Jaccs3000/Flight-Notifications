@@ -332,6 +332,8 @@ Formato de ejemplo **ficticio**:
 
 El toque abre el detalle exacto de la alerta. Las notificaciones se guardan localmente en una lista (por defecto conservar las **100 últimas**, eliminado primero el registro más antiguo); incluir botón “Borrar notificaciones” con confirmación. Conservar solo el ID técnico necesario para reintentar idempotentemente el mismo despacho; no deduplicar futuras tarifas. Mostrar advertencia cuando el permiso de notificaciones esté desactivado.
 
+Si Android revoca el permiso o desactiva el canal, el Worker automático no inicia GET de vuelos que no podrían producir avisos; conserva el turno para reintentarlo en un tick posterior y muestra cómo abrir Ajustes. Una búsqueda manual explícita sigue disponible, pero informa que el sistema no podrá mostrar avisos mientras falte el permiso.
+
 ---
 
 ## 6. Programación periódica y límites de Android
@@ -342,7 +344,7 @@ El toque abre el detalle exacto de la alerta. Las notificaciones se guardan loca
 - Identificar y mantener los timestamps de próxima consulta con reloj local y tiempo persistido; reprogramar de manera segura después de reinicio, cambio de hora y actualización de la app.
 - Respetar `Constraints(NetworkType.CONNECTED)`. Elegir una política de backoff; no reintentar automáticamente de manera ilimitada ante 429, credencial inválida o errores de negocio.
 - Mostrar **“frecuencia solicitada”** y **“última ejecución real”**; Android Doze, restricciones de batería y estado del teléfono pueden retrasar o saltar revisiones.
-- La consulta manual es independiente del turno automático, pero está sujeta al mismo bloqueo de concurrencia y presupuesto total de consultas.
+- La consulta manual es independiente del turno automático y no lo adelanta ni lo consume; ambas usan el mismo bloqueo y presupuesto. Si una revisión de la misma alerta termina mientras la otra espera, se coalesce esa solicitud superpuesta sin repetir GET. Registrar de forma persistente el instante de finalización para resolver la carrera aun si WorkManager y la UI esperan el bloqueo en orden distinto. Una petición manual posterior sigue siendo independiente.
 - **Criterio de aceptación de segundo plano:** las alertas activas continúan programadas cuando se cierra la interfaz normalmente o se retira la aplicación de recientes, sin exigir que el usuario deje la pantalla abierta ni una notificación permanente de servicio foreground. Se deben verificar trabajos realizados realmente mientras la pantalla permanece apagada, el dispositivo está bloqueado y tras un reinicio (cuando Android los permita).
 - En configuración mostrar diagnóstico simple: `Última consulta efectiva`, `Próxima consulta estimada`, `Último error`, `Estado del programador`, `Restricción de batería detectada` cuando pueda observarse, y botón `Comprobar programación` **sin gastar llamadas SerpApi**. No prometer tiempos exactos.
 - Crear pruebas instrumentadas con WorkManager Test, escenarios de cierre normal, eliminación de Recientes, pantalla bloqueada, modo Doze, pérdida/recuperación de red y reinicio. Confirmar logs locales sanitizados con fecha real. Si el equipo tiene restricción manual de batería, mostrar instrucciones opcionales para que el propietario las revise; no solicitar exenciones agresivas como requisito.
@@ -503,7 +505,7 @@ Diseñar el esquema exacto durante implementación, manteniendo **estos concepto
 | Solo tres candidatos consultados | Mostrar cobertura parcial, nunca afirmar revisión exhaustiva de aerolíneas |
 | Moneda distinta a COP | No notificar ni convertir mediante tasa supuesta |
 | API devuelve precio pero no puede vincularse a combinación real | No notificar |
-| Mismo vuelo, fecha y precio previamente notificados | No repetir notificación |
+| Mismo vuelo, fecha y precio previamente notificados | Notificar de nuevo si vuelve a ser la tarifa verificada más baja elegible de esta revisión |
 | Tarifa repetida en otra revisión | Volver a notificar si es la menor oferta verificada bajo el máximo actual |
 | Varias ofertas elegibles en una revisión | Enviar como máximo un aviso por alerta: el más barato entre los elegibles; mostrar las demás verificadas en el detalle, sin marcarlas como notificadas |
 | Aeropuerto de origen o destino fuera de Colombia | Rechazar la configuración por estar fuera del alcance nacional de V1 |

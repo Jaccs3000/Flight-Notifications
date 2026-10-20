@@ -31,11 +31,15 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -73,6 +77,8 @@ private data class AlertEditorFields(
 fun FlightAlertsSection(viewModel: FlightAlertsViewModel, maximumLocalGets: Int) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var notificationsAllowed by remember { mutableStateOf(viewModel.notificationsAllowed()) }
     var editorId by remember { mutableStateOf<String?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
     var pendingEnableId by remember { mutableStateOf<String?>(null) }
@@ -81,11 +87,20 @@ fun FlightAlertsSection(viewModel: FlightAlertsViewModel, maximumLocalGets: Int)
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val id = pendingEnableId
         pendingEnableId = null
+        notificationsAllowed = viewModel.notificationsAllowed()
         if (granted && id != null) viewModel.setEnabled(id, true)
         else if (!granted) viewModel.notificationPermissionDenied()
     }
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) notificationsAllowed = viewModel.notificationsAllowed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val editorAlert = editorId?.let { target -> state.alerts.firstOrNull { it.alert.id == target }?.alert }
+    val activeCount = state.alerts.count { it.alert.enabled && !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(it.alert.outboundDate)) }
     val defaultDate = LocalDate.now(COLOMBIA_ZONE).plusDays(30)
     var fields by remember(editorId, editorOpen) {
         mutableStateOf(
@@ -98,7 +113,6 @@ fun FlightAlertsSection(viewModel: FlightAlertsViewModel, maximumLocalGets: Int)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Alertas de vuelos", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            val activeCount = state.alerts.count { it.alert.enabled && !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(it.alert.outboundDate)) }
             Text("$activeCount activas · ${state.alerts.size} configuradas · rutas nacionales en Colombia", style = MaterialTheme.typography.bodyMedium)
         }
 
@@ -149,6 +163,23 @@ fun FlightAlertsSection(viewModel: FlightAlertsViewModel, maximumLocalGets: Int)
                     Text("La configuración activa supera el presupuesto local estimado; algunas revisiones podrían quedar pendientes. Se respetará el límite global de cuota.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = { showCatalog = true }) { Text("Catálogo informativo de aerolíneas") }
+            }
+        }
+
+        if (activeCount > 0 && !notificationsAllowed) {
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Notificaciones desactivadas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Las revisiones automáticas están suspendidas para no gastar cuota en avisos que Android no puede mostrar. Las búsquedas manuales siguen disponibles, pero tampoco podrán mostrar avisos mientras el permiso o el canal estén desactivados.")
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                            )
+                        },
+                    ) { Text("Abrir ajustes de notificaciones") }
+                }
             }
         }
 

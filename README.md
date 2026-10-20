@@ -36,7 +36,7 @@ Pruebas instrumentadas con un emulador/dispositivo conectado:
 
 ## Instalar y configurar
 
-1. Para uso habitual instala `flight-notifications-1.0.4-release.apk` en Android 13 o posterior. Autoriza a Android a instalar desde la aplicación con la que abras el archivo. El APK debug sirve para desarrollo y usa otro identificador de aplicación/datos.
+1. Para uso habitual instala `flight-notifications-1.0.5-release.apk` en Android 13 o posterior. Autoriza a Android a instalar desde la aplicación con la que abras el archivo. El APK debug sirve para desarrollo y usa otro identificador de aplicación/datos.
 2. Abre **Configuración**, ingresa la API key de SerpApi en el teléfono y pulsa **Guardar cifrada**. La clave se almacena usando Android Keystore y no se debe compartir en chats, logs o archivos del proyecto.
 3. Pulsa **Probar conexión** para consultar `GET /account.json`. Esta comprobación no inicia GET de vuelos.
 4. La instalación nueva incluye una alerta de ejemplo CTG–CLO para marzo de 2027, pausada. Puedes editarla o borrarla; no vuelve a aparecer al volver a abrir la app.
@@ -47,9 +47,9 @@ Una tarifa se presenta como total observado sólo si los datos asociados de ida 
 
 ## Actualizaciones, firma y artefactos
 
-La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=6` y `versionName=1.0.4`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
+La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=7` y `versionName=1.0.5`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
 
-El APK release para uso habitual se entrega en `G:\Mi unidad\APK android car\flight-notifications-1.0.4-release.apk`; el debug y `SHA256SUMS.txt` quedan en esa carpeta. También se conservan copias descargables en `outputs\`.
+El APK release para uso habitual se entrega en `G:\Mi unidad\APK android car\flight-notifications-1.0.5-release.apk`; el debug y `SHA256SUMS.txt` quedan en esa carpeta. También se conservan copias descargables en `outputs\`.
 
 ## Privacidad y alcance
 

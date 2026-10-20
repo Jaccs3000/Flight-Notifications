@@ -151,41 +151,65 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     fun confirmReview() {
         val id = mutableState.value.reviewConfirmationId ?: return
         val alert = mutableState.value.alerts.firstOrNull { it.alert.id == id }?.alert ?: return
+        val requestedAt = System.currentTimeMillis()
         mutableState.value = mutableState.value.copy(reviewConfirmationId = null, runningAlertId = id, error = null, message = null)
         activeReview = viewModelScope.launch {
             var completedResult: AlertSearchResult? = null
+            var reviewedAlert: FlightAlertEntity? = null
+            var coalescedWithRecentReview = false
             try {
                 val outcomes = container.serpApiRepository.runAlertBatch(
-                    alerts = listOf(alert),
+                    alerts = emptyList(),
                     maximumGets = com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_ALERT,
                     afterResults = { results ->
                         results.forEach { result ->
+                            val alertForReview = reviewedAlert ?: return@forEach
                             completedResult = result
-                            val saved = container.flightAlertRepository.saveOutcome(alert.id, result, alert)
+                            container.flightAlertRepository.recordManualAttempt(alertForReview, result.attemptAtMillis)
+                            val saved = container.flightAlertRepository.saveOutcome(alertForReview.id, result, alertForReview)
                             if (saved) {
-                                if (result.candidatesConsidered > 0) container.flightAlertRepository.advanceCandidateRotation(alert)
-                                val latest = container.flightAlertRepository.find(alert.id)
-                                if (alert.enabled && latest?.enabled == true &&
-                                    latest.criteriaVersion == alert.criteriaVersion &&
-                                    latest.notificationPolicyVersion == alert.notificationPolicyVersion &&
+                                if (result.candidatesConsidered > 0) container.flightAlertRepository.advanceCandidateRotation(alertForReview)
+                                val latest = container.flightAlertRepository.find(alertForReview.id)
+                                if (alertForReview.enabled && latest?.enabled == true &&
+                                    latest.criteriaVersion == alertForReview.criteriaVersion &&
+                                    latest.notificationPolicyVersion == alertForReview.notificationPolicyVersion &&
                                     result.status == "VERIFICADO"
                                 ) {
                                     val dispatch = container.notificationDispatcher.dispatchIfEligible(latest, result, container.flightAlertRepository)
                                     container.flightDiagnosticLog.record("manual_notification_dispatch alert_id=${id.take(8)} result=$dispatch")
-                                } else if (alert.enabled && result.status == "VERIFICADO" && !container.notificationDispatcher.notificationsAllowed()) {
+                                } else if (alertForReview.enabled && result.status == "VERIFICADO" && !container.notificationDispatcher.notificationsAllowed()) {
                                     container.flightDiagnosticLog.record("manual_notification_suppressed alert_id=${id.take(8)} cause=permission_or_channel_disabled")
                                 }
                             }
                         }
                     },
+                    selectAlerts = {
+                        // Resolve the entity only after acquiring the repository execution lock,
+                        // so edits/deletes made while this review waited cannot trigger stale GETs.
+                        val current = container.flightAlertRepository.find(id)
+                        when {
+                            current == null -> emptyList()
+                            com.flightnotifications.app.data.worker.AutomaticReviewPolicy.wasReviewedAfter(current, requestedAt) -> {
+                                coalescedWithRecentReview = true
+                                emptyList()
+                            }
+                            else -> {
+                                reviewedAlert = current
+                                listOf(current)
+                            }
+                        }
+                    },
                 )
                 val result = completedResult ?: outcomes.firstOrNull()
-                container.flightAlertRepository.recordManualAttempt(alert, result?.attemptAtMillis ?: System.currentTimeMillis())
                 mutableState.value = mutableState.value.copy(
-                    message = result?.let(::resultMessage) ?: "La revisión finalizó sin resultado.",
+                    message = result?.let(::resultMessage) ?: if (coalescedWithRecentReview) {
+                        "La alerta ya se revisó mientras esta búsqueda esperaba; no se hicieron GET adicionales."
+                    } else {
+                        "La revisión finalizó sin resultado."
+                    },
                     error = if (result?.status == "ERROR") result.error?.let(::errorMessage) else null,
                 )
-                container.flightDiagnosticLog.record("ui_action manual_alert_review_complete alert_id=${id.take(8)} status=${result?.status ?: "UNKNOWN"} flight_gets=${result?.flightGetsStarted ?: 0}")
+                container.flightDiagnosticLog.record("ui_action manual_alert_review_complete alert_id=${id.take(8)} status=${result?.status ?: if (coalescedWithRecentReview) "COALESCED" else "UNKNOWN"} flight_gets=${result?.flightGetsStarted ?: 0}")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {

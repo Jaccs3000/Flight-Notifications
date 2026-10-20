@@ -39,12 +39,12 @@ abstract class RequestReservationDao {
         val elapsedDelta = elapsedNow - previous.elapsedRealtimeMillis
         val rebootDetected = elapsedDelta < 0
         if (rebootDetected && wallDelta < 0) {
-            return BudgetClockCheck(trusted = false, effectiveNowMillis = previous.effectiveBudgetClockMillis)
+            return reanchorAfterClockAnomaly(previous, wallNow, elapsedNow)
         }
         if (!rebootDetected &&
             (wallDelta < 0 || kotlin.math.abs(wallDelta - elapsedDelta) > CLOCK_DRIFT_TOLERANCE_MILLIS)
         ) {
-            return BudgetClockCheck(trusted = false, effectiveNowMillis = previous.effectiveBudgetClockMillis)
+            return reanchorAfterClockAnomaly(previous, wallNow, elapsedNow)
         }
 
         // On reboot, wall time may have been moved forward while the app was closed. Freeze
@@ -61,6 +61,26 @@ abstract class RequestReservationDao {
             ),
         )
         return BudgetClockCheck(trusted = true, effectiveNowMillis = effectiveNow)
+    }
+
+    /**
+     * Reject the anomalous observation but remember it as the new baseline. Without reanchoring,
+     * one clock correction or reboot could leave every future reservation blocked forever.
+     * Keep the effective quota clock frozen so an anomaly cannot expire old reservations early.
+     */
+    private suspend fun reanchorAfterClockAnomaly(
+        previous: BudgetClockObservationEntity,
+        wallNow: Long,
+        elapsedNow: Long,
+    ): BudgetClockCheck {
+        saveClockObservation(
+            BudgetClockObservationEntity(
+                wallClockEpochMillis = wallNow,
+                elapsedRealtimeMillis = elapsedNow,
+                effectiveBudgetClockMillis = previous.effectiveBudgetClockMillis,
+            ),
+        )
+        return BudgetClockCheck(trusted = false, effectiveNowMillis = previous.effectiveBudgetClockMillis)
     }
 
     @Transaction

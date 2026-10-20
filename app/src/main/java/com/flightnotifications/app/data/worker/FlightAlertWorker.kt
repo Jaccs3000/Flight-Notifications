@@ -28,27 +28,49 @@ class FlightAlertWorker(
                     .entries.joinToString(",") { "${it.key}:${it.value}" }
                 container.flightDiagnosticLog.record("notification_outbox_recovery processed=${recoveredNotifications.size} outcomes={$counts}")
             }
-            val today = LocalDate.now(COLOMBIA_ZONE)
-            // Expire enabled alerts at the first coordinator run after the local departure day,
-            // even when their next scheduled review would otherwise be later.
-            val expired = container.flightAlertRepository.enabledAlerts()
-                .filter { today.isAfter(LocalDate.parse(it.outboundDate)) }
-            expired.forEach {
-                container.flightAlertRepository.deferExpired(it.id)
-                container.flightAlertRepository.clearExpiredNotificationState(it.id)
+            var decision = AutomaticReviewPolicy.Decision.NO_DUE_ALERTS
+            var expiredCount = 0
+            var dueCount = 0
+            var coalescedCount = 0
+            var submittedAlerts = emptyList<FlightAlertEntity>()
+            container.serpApiRepository.runAlertBatch(
+                alerts = emptyList(),
+                afterResults = { outcomes ->
+                    persistAndDispatch(outcomes, submittedAlerts.associateBy { it.id })
+                },
+                selectAlerts = {
+                    // Re-read state after acquiring the repository's execution lock. This avoids
+                    // running a stale worker snapshot after a manual review, pause, edit, or delete.
+                    val today = LocalDate.now(COLOMBIA_ZONE)
+                    val expired = container.flightAlertRepository.enabledAlerts()
+                        .filter { today.isAfter(LocalDate.parse(it.outboundDate)) }
+                    expired.forEach {
+                        container.flightAlertRepository.deferExpired(it.id)
+                        container.flightAlertRepository.clearExpiredNotificationState(it.id)
+                    }
+                    expiredCount = expired.size
+                    val due = container.flightAlertRepository.dueAlerts(System.currentTimeMillis())
+                        .filterNot { today.isAfter(LocalDate.parse(it.outboundDate)) }
+                    val actionableDue = AutomaticReviewPolicy.excludeReviewedSince(due, now)
+                    dueCount = actionableDue.size
+                    coalescedCount = due.size - actionableDue.size
+                    decision = AutomaticReviewPolicy.decide(actionableDue.size, container.notificationDispatcher.notificationsAllowed())
+                    if (decision == AutomaticReviewPolicy.Decision.RUN) {
+                        submittedAlerts = actionableDue
+                        container.flightDiagnosticLog.record("scheduler_tick due_alerts=${actionableDue.size} coalesced_alerts=$coalescedCount worker_run_attempt=$runAttemptCount max_batch_gets=${com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_BATCH}")
+                        actionableDue
+                    } else {
+                        emptyList()
+                    }
+                },
+            )
+            when (decision) {
+                AutomaticReviewPolicy.Decision.NO_DUE_ALERTS ->
+                    container.flightDiagnosticLog.record("scheduler_tick no_due_alerts due_alerts=$dueCount coalesced_alerts=$coalescedCount expired_alerts=$expiredCount flight_gets_started=0")
+                AutomaticReviewPolicy.Decision.NOTIFICATIONS_BLOCKED ->
+                    container.flightDiagnosticLog.record("scheduler_tick blocked cause=notification_permission_or_channel_disabled due_alerts=$dueCount expired_alerts=$expiredCount flight_gets_started=0")
+                AutomaticReviewPolicy.Decision.RUN -> Unit
             }
-            val due = container.flightAlertRepository.dueAlerts(now)
-            val expiredIds = expired.mapTo(mutableSetOf()) { it.id }
-            val activeDue = due.filterNot { it.id in expiredIds }
-            if (activeDue.isEmpty()) {
-                container.flightDiagnosticLog.record("scheduler_tick no_due_alerts expired_alerts=${expired.size} flight_gets_started=0")
-                return Result.success()
-            }
-            container.flightDiagnosticLog.record("scheduler_tick due_alerts=${activeDue.size} worker_run_attempt=$runAttemptCount max_batch_gets=${com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_BATCH}")
-            val byId = activeDue.associateBy { it.id }
-            container.serpApiRepository.runAlertBatch(activeDue, afterResults = { outcomes ->
-                persistAndDispatch(outcomes, byId)
-            })
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -85,6 +107,7 @@ class FlightAlertWorker(
                 alert = current,
                 attemptAt = outcome.attemptAtMillis,
                 nextDueAt = completedAt + delay,
+                completedAt = completedAt,
             )
             container.flightDiagnosticLog.record("scheduler_result_saved alert_id=${original.id.take(8)} status=${outcome.status} saved=$saved schedule_updated=${updated > 0} next_due_in_ms=$delay flight_gets=${outcome.flightGetsStarted}")
         }

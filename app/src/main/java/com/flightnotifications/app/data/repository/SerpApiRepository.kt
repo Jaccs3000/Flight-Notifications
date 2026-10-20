@@ -75,8 +75,12 @@ class SerpApiRepository(
         alerts: List<FlightAlertEntity>,
         maximumGets: Int = MAX_GETS_PER_BATCH,
         afterResults: suspend (List<AlertSearchResult>) -> Unit = {},
+        selectAlerts: (suspend () -> List<FlightAlertEntity>)? = null,
     ): List<AlertSearchResult> = executionMutex.withLock {
-        if (alerts.isEmpty()) return@withLock emptyList()
+        // Select under the same lock as the API calls. A worker may have been queued while a
+        // manual review, edit, pause, or deletion changed which alerts are still actionable.
+        val batchAlerts = selectAlerts?.invoke() ?: alerts
+        if (batchAlerts.isEmpty()) return@withLock emptyList()
         val batchStarted = now().toEpochMilli()
         val apiKey: String
         val account: AccountSnapshot
@@ -87,18 +91,18 @@ class SerpApiRepository(
             throw cancelled
         } catch (failure: ProbeFailure) {
             logFlightDiagnostic("alert_batch_blocked category=${failure.code.name} flight_gets_started=0")
-            val blocked = alerts.map { batchFailure(it, failure.code.name, batchStarted, null, 0) }
+            val blocked = batchAlerts.map { batchFailure(it, failure.code.name, batchStarted, null, 0) }
             afterResults(blocked)
             return@withLock blocked
         }
         if (!account.accountStatus.equals("Active", ignoreCase = true)) {
-            val blocked = alerts.map { batchFailure(it, FailureCode.ACCOUNT_INACTIVE.name, batchStarted, account.conservativeSearchesLeft, 0) }
+            val blocked = batchAlerts.map { batchFailure(it, FailureCode.ACCOUNT_INACTIVE.name, batchStarted, account.conservativeSearchesLeft, 0) }
             afterResults(blocked)
             return@withLock blocked
         }
         var accountRemaining = account.conservativeSearchesLeft
             ?: run {
-                val blocked = alerts.map { batchFailure(it, FailureCode.ACCOUNT_INVALID.name, batchStarted, null, 0) }
+                val blocked = batchAlerts.map { batchFailure(it, FailureCode.ACCOUNT_INVALID.name, batchStarted, null, 0) }
                 afterResults(blocked)
                 return@withLock blocked
             }
@@ -106,7 +110,7 @@ class SerpApiRepository(
         try {
             val snapshot = budgetRepository.snapshot()
             if (!snapshot.clockTrusted) {
-                val blocked = alerts.map { batchFailure(it, FailureCode.CLOCK_UNTRUSTED.name, batchStarted, accountRemaining, 0) }
+                val blocked = batchAlerts.map { batchFailure(it, FailureCode.CLOCK_UNTRUSTED.name, batchStarted, accountRemaining, 0) }
                 afterResults(blocked)
                 return@withLock blocked
             }
@@ -114,14 +118,14 @@ class SerpApiRepository(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            val blocked = alerts.map { batchFailure(it, FailureCode.LOCAL_QUOTA.name, batchStarted, accountRemaining, 0) }
+            val blocked = batchAlerts.map { batchFailure(it, FailureCode.LOCAL_QUOTA.name, batchStarted, accountRemaining, 0) }
             afterResults(blocked)
             return@withLock blocked
         }
         val allGets = intArrayOf(0)
         val results = mutableListOf<AlertSearchResult>()
         var batchStopReason: String? = null
-        for (alert in alerts) {
+        for (alert in batchAlerts) {
             if (batchStopReason != null) {
                 results += batchFailure(alert, "BATCH_STOPPED_$batchStopReason", now().toEpochMilli(), accountRemaining, 0)
                 continue

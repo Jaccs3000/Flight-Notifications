@@ -137,6 +137,40 @@ class FlightAlertRepositoryTest {
         assertTrue(repository.dueAlerts(Long.MAX_VALUE).any { it.id == original.id })
     }
 
+    @Test
+    fun manualReviewRecordsCompletionWithoutMovingTheAutomaticTurn() = runBlocking {
+        val active = alert().copy(id = "manual-active", nextDueAt = 1)
+        val paused = alert().copy(id = "manual-paused", enabled = false, nextDueAt = null)
+        dao.putAlert(active)
+        dao.putAlert(paused)
+
+        repository.recordManualAttempt(active, attemptAt = 10_000, completedAt = 20_000)
+        repository.recordManualAttempt(paused, attemptAt = 10_000, completedAt = 20_000)
+
+        val current = repository.find(active.id)!!
+        assertEquals(10_000L, current.lastAttemptAt)
+        assertEquals(20_000L, current.lastReviewCompletedAt)
+        assertEquals(1L, current.nextDueAt)
+        assertTrue(repository.dueAlerts(20_000).any { it.id == active.id })
+        assertEquals(null, repository.find(paused.id)!!.nextDueAt)
+        assertTrue(repository.dueAlerts(Long.MAX_VALUE).none { it.id == paused.id })
+    }
+
+    @Test
+    fun automaticReviewPersistsItsCompletionAndSchedulesFromThatCompletion() = runBlocking {
+        val active = alert().copy(nextDueAt = 1)
+        dao.putAlert(active)
+
+        val rows = repository.recordAutomaticAttempt(active, attemptAt = 10_000, nextDueAt = 90_000, completedAt = 20_000)
+
+        assertEquals(1, rows)
+        val current = repository.find(active.id)!!
+        assertEquals(10_000L, current.lastAttemptAt)
+        assertEquals(10_000L, current.lastAutomaticAttemptAt)
+        assertEquals(20_000L, current.lastReviewCompletedAt)
+        assertEquals(90_000L, current.nextDueAt)
+    }
+
     private fun alert() = FlightAlertEntity(
         id = "repository-alert",
         name = "CTG-CLO",

@@ -113,6 +113,26 @@ class SerpApiRepositoryTest {
     }
 
     @Test
+    fun queuedAlertBatchReselectsAlertsAfterAcquiringTheExecutionLock() = runBlocking {
+        val lock = Mutex(locked = true)
+        val repository = repository(executionMutex = lock)
+        var currentAlerts = listOf(alert())
+
+        val pending = async {
+            repository.runAlertBatch(
+                alerts = listOf(alert()),
+                selectAlerts = { currentAlerts },
+            )
+        }
+        yield()
+        currentAlerts = emptyList() // The user paused/deleted/just reviewed the stale alert.
+        lock.unlock()
+
+        assertTrue(pending.await().isEmpty())
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
     fun manualRoundTripUsesAtMostTwoGetsAndKeepsAllOperators() = runBlocking {
         server.enqueue(jsonResponse(accountJson()))
         server.enqueue(jsonResponse(fixture("outbound.json")))
@@ -414,7 +434,7 @@ class SerpApiRepositoryTest {
         assertTrue(budget.reserved.isEmpty())
     }
 
-    private fun repository(budget: FakeBudget = FakeBudget()): SerpApiRepository {
+    private fun repository(budget: FakeBudget = FakeBudget(), executionMutex: Mutex = Mutex()): SerpApiRepository {
         val client = RetrofitSerpApiClient(server.url("/").toString())
         return SerpApiRepository(
             credentialStore = FakeCredentialStore(),
@@ -422,7 +442,7 @@ class SerpApiRepositoryTest {
             flightClient = client,
             budgetRepository = budget,
             responseParser = SerpApiJsonParser(),
-            executionMutex = Mutex(),
+            executionMutex = executionMutex,
         )
     }
 
