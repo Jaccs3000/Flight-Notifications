@@ -13,7 +13,8 @@ data class SearchCriteria(
     val destination: String = "CLO",
 ) {
     fun validationError(today: LocalDate = LocalDate.now(COLOMBIA_ZONE)): String? = when {
-        origin != "CTG" || destination != "CLO" -> "La ruta de esta prueba es CTG–CLO."
+        !IATA.matches(origin) || !IATA.matches(destination) -> "Los aeropuertos deben usar códigos IATA de tres letras."
+        origin == destination -> "El origen y el destino deben ser distintos."
         outboundDate.isBefore(today) -> "La fecha de ida no puede estar en el pasado."
         !returnDate.isAfter(outboundDate) -> "La fecha de regreso debe ser posterior a la ida."
         else -> null
@@ -21,6 +22,7 @@ data class SearchCriteria(
 
     companion object {
         val COLOMBIA_ZONE: ZoneId = ZoneId.of("America/Bogota")
+        private val IATA = Regex("[A-Z]{3}")
     }
 }
 
@@ -96,6 +98,7 @@ data class ProbeOutcome(
     val statusLabel: String,
     val detail: String,
     val malformedOptions: Int,
+    val verifiedRoundTripPriceCop: Long? = null,
 ) {
     val wingoDetected: Boolean
         get() = airlinesDetected.any { it.contains("Wingo", ignoreCase = true) }
@@ -106,6 +109,7 @@ data class LocalBudgetSnapshot(
     val remainingInWindow: Int,
     val windowEndsAt: Instant,
     val clockTrusted: Boolean = true,
+    val maximumRequests: Int = 200,
 )
 
 enum class RequestStage { OUTBOUND, RETURN }

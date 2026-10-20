@@ -8,6 +8,9 @@ import com.flightnotifications.app.data.repository.LocalBudgetRepository
 import com.flightnotifications.app.domain.model.BudgetReservationResult
 import com.flightnotifications.app.domain.model.RequestStage
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,6 +26,7 @@ class LocalBudgetRepositoryTest {
     private lateinit var repository: LocalBudgetRepository
     private var now = Instant.parse("2026-10-19T12:00:00Z")
     private var elapsed = 1_000L
+    private var maximum = 200
 
     @Before
     fun createDatabase() {
@@ -30,7 +34,7 @@ class LocalBudgetRepositoryTest {
         database = Room.inMemoryDatabaseBuilder(context, ProbeDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = LocalBudgetRepository(database.requestReservationDao(), { now }, { elapsed })
+        repository = LocalBudgetRepository(database.requestReservationDao(), { now }, { elapsed }, { maximum })
     }
 
     @After
@@ -81,5 +85,41 @@ class LocalBudgetRepositoryTest {
         assertTrue(snapshot.clockTrusted)
         assertEquals(1, snapshot.usedInWindow)
         assertEquals(199, snapshot.remainingInWindow)
+    }
+
+    @Test
+    fun loweringLocalMaximumPreservesReservationsAndBlocksAtTheNewLimit() = runBlocking {
+        assertEquals(200, repository.snapshot().remainingInWindow)
+        assertEquals(200, repository.snapshots.value?.remainingInWindow)
+        repeat(5) { index -> assertEquals(BudgetReservationResult.RESERVED, repository.reserve(RequestStage.OUTBOUND, "before-reduce-$index")) }
+        assertEquals(195, repository.snapshots.value?.remainingInWindow)
+        maximum = 3
+
+        val snapshot = repository.snapshot()
+
+        assertEquals(5, snapshot.usedInWindow)
+        assertEquals(3, snapshot.maximumRequests)
+        assertEquals(0, snapshot.remainingInWindow)
+        assertEquals(0, repository.snapshots.value?.remainingInWindow)
+        assertEquals(BudgetReservationResult.LIMIT_REACHED, repository.reserve(RequestStage.RETURN, "after-reduce"))
+        assertEquals(5, database.requestReservationDao().countSince(Instant.EPOCH.toEpochMilli()))
+    }
+
+    @Test
+    fun concurrentReservationsNeverExceedTheConfiguredBudget() = runBlocking {
+        maximum = 10
+        repository.snapshot()
+
+        val results = coroutineScope {
+            (0 until 30).map { index ->
+                async(Dispatchers.IO) {
+                    repository.reserve(RequestStage.OUTBOUND, "concurrent-$index")
+                }
+            }.map { it.await() }
+        }
+
+        assertEquals(10, results.count { it == BudgetReservationResult.RESERVED })
+        assertEquals(20, results.count { it == BudgetReservationResult.LIMIT_REACHED })
+        assertEquals(10, repository.snapshot().usedInWindow)
     }
 }

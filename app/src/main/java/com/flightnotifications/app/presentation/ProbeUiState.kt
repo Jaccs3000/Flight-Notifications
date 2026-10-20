@@ -7,9 +7,10 @@ import java.time.LocalDate
 
 data class ProbeUiState(
     val credentialConfigured: Boolean = false,
-    val outboundDate: LocalDate = LocalDate.of(2027, 3, 25),
-    val returnDate: LocalDate = LocalDate.of(2027, 3, 28),
+    val outboundDate: LocalDate = LocalDate.of(2027, 1, 25),
+    val returnDate: LocalDate = LocalDate.of(2027, 2, 3),
     val directOnly: Boolean = true,
+    val localBudgetLimit: Int = 200,
     val account: AccountSnapshot? = null,
     val accountMessage: String? = null,
     val budget: LocalBudgetSnapshot? = null,
@@ -19,4 +20,6 @@ data class ProbeUiState(
     val isRunningProbe: Boolean = false,
     val showFlightConfirmation: Boolean = false,
     val isDeletingCredential: Boolean = false,
+    val accountDiagnosticLog: String = "",
+    val flightDiagnosticLog: String = "",
 )

@@ -4,7 +4,7 @@
 **Destino:** Codex en Android Studio / VS Code  
 **Archivo único:** `REQUIREMENTS.md`  
 **Propietario:** uso personal; no hay publicación en Google Play  
-**Fase actual:** especificación funcional actualizada, sin implementación ni consultas reales a SerpApi en este documento. Las pruebas de segundo plano son requisitos de aceptación futuros: no hay una app existente que pueda declararse probada en este momento.
+**Fase actual:** requisitos V1.4 implementados en el proyecto Android. El estado verificable de código, APKs, pruebas y pasos manuales está en [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md); las pruebas de segundo plano en teléfono físico siguen siendo aceptación manual pendiente.
 
 Este es el **único archivo obligatorio** para iniciar el proyecto. Contiene tanto el **prompt de ejecución para Codex** como toda la especificación funcional/técnica, el plan, los casos de prueba, los riesgos y la lista de aceptación. No requiere ninguno de los borradores anteriores.
 
@@ -28,9 +28,9 @@ Una vez autorizado, implementa por fases completas y verificables. Primero prueb
 
 Valida con evidencia la semántica de price/departure_token en el JSON REAL; nunca sumes a ciegas precios que pueden representar el total de ida y vuelta. Respeta la casilla «Solo vuelos directos» por alerta: si está marcada, exige cero escalas en ida y regreso; si está desmarcada, admite itinerarios con escalas. Valida siempre aeropuertos y fechas exactos. Si los resultados no permiten demostrar precio único de ida y vuelta para la combinación seleccionada, bloquea notificaciones y explica por qué.
 
-Cumple el alcance aprobado: múltiples alertas, casilla «Solo vuelos directos» por alerta (marcada por defecto), frecuencias configurables 6/8/12/24 horas, 1 adulto, económica, COP, solo tema claro, último resultado por alerta y registro de notificaciones, sin historial ni gráficos, clave cifrada con Android Keystore, Account API y contador local para cuota compartida, deduplicación persistente y WorkManager sujeto a límites de Android. Exige pruebas instrumentadas de trabajo real en segundo plano con la interfaz cerrada, pantalla bloqueada y tras reiniciar el equipo; distingue cierre normal de detención forzosa.
+Cumple el alcance aprobado: múltiples alertas, casilla «Solo vuelos directos» por alerta (marcada por defecto), frecuencias configurables 6/8/12/24 horas, 1 adulto, económica, COP, solo tema claro, último resultado por alerta y registro de notificaciones, sin historial ni gráficos, clave cifrada con Android Keystore, Account API y contador local para cuota compartida, idempotencia del despacho pendiente y WorkManager sujeto a límites de Android. Exige pruebas instrumentadas de trabajo real en segundo plano con la interfaz cerrada, pantalla bloqueada y tras reiniciar el equipo; distingue cierre normal de detención forzosa.
 
-Aplica las decisiones V1.4: como máximo un aviso por alerta y revisión, escogiendo la oferta más barata entre las elegibles para un nuevo aviso; el mismo itinerario solo vuelve a avisarse si mejora su menor precio previamente notificado. Comprueba el saldo oficial antes de cada tanda y bloquea las búsquedas de vuelos si falla esa comprobación, sin recurrir solo al contador local. El catálogo informativo se actualiza con nuevas versiones de la APK; los operadores retornados por SerpApi se muestran aunque no estén en él. Entrega APK release firmado con clave propia estable y APK debug para pruebas, con evidencia o bloqueo explícito.
+Aplica las decisiones V1.4, con esta instrucción posterior del propietario: como máximo un aviso por alerta y revisión, siempre por la oferta verificada más barata que cumpla el máximo, aunque el mismo itinerario y precio ya se hayan avisado en revisiones anteriores. Comprueba el saldo oficial antes de cada tanda y bloquea las búsquedas de vuelos si falla esa comprobación, sin recurrir solo al contador local. El catálogo informativo se actualiza con nuevas versiones de la APK; los operadores retornados por SerpApi se muestran aunque no estén en él. Entrega APK release firmado con clave propia estable y APK debug para pruebas, con evidencia o bloqueo explícito.
 
 No agregues backend, Firebase, cuentas, scraping de aerolíneas, pagos ni funciones no solicitadas. Las escalas están permitidas únicamente cuando se desmarque la casilla correspondiente. Obtén las aerolíneas dinámicamente sin listas cerradas que excluyan operadores; identifica la cobertura que no puede garantizar SerpApi. No asumas que consultas observadas garantizan reserva o precio de compra. No afirmes que algo fue probado, compilado, instalado o confirmado sin evidencia real.
 
@@ -51,17 +51,18 @@ Cuando termine tu primera respuesta de análisis, DETENTE y espera mi aprobació
 
 # Especificación funcional, técnica y de calidad — Alertas de vuelos Android (Kotlin)
 
-**Estado:** Requisitos funcionales V1 actualizados por el propietario; especificación técnica consolidada V1.4. La integración real con SerpApi sigue pendiente de prueba autorizada.  
+**Estado:** requisitos funcionales V1 aprobados por el propietario; especificación técnica consolidada V1.4. El propietario aportó evidencia histórica y posteriormente reportó una prueba manual real verificada con la APK V1.0.2. El build y las pruebas automatizadas no iniciaron consultas reales.
 **Fecha de especificación:** 19 de octubre de 2026.  
 **Documento de implementación dirigido a:** Codex / Android Studio.  
 **Control de cambios V1.3:** casilla opcional de vuelos directos (activada inicialmente), requisitos y pruebas ampliadas de ejecución real en segundo plano, catálogo dinámico de aerolíneas nacionales y visualización por operador; límites verificables de la cobertura que Google Flights/SerpApi puede ofrecer. Conserva los requisitos anteriores no modificados.  
 **Control de cambios V1.4:** recomendaciones aprobadas por el propietario: rutas nacionales de Colombia; avisos por itinerario nuevo o mejora de su menor precio notificado, máximo uno por alerta y revisión entre las ofertas elegibles; bloqueo de búsquedas cuando falla la comprobación de saldo oficial; catálogo informativo actualizado por versiones de APK; entrega release firmada y debug; precisión del contador de cuota, invalidación por cambios de búsqueda y creación única del ejemplo por instalación.  
+**Instrucción posterior del propietario (20 de octubre de 2026):** cada revisión debe notificar la tarifa verificada más baja bajo el máximo de la alerta, aunque se haya notificado el mismo itinerario o importe antes. Esta regla sustituye únicamente el filtro V1.4 de “itinerario nuevo o mejora de su menor precio”; se mantiene un solo aviso por alerta y revisión y la idempotencia técnica de cada despacho pendiente.
 **Idioma de la aplicación:** español.  
 **Modalidad:** APK personal, instalación directa, sin publicación en Google Play.
 
 > **Propósito:** desarrollar una aplicación Android nativa, completamente local en lo relativo a interfaz, configuración, datos y notificaciones, capaz de consultar periódicamente **SerpApi (motor `google_flights`)** para detectar vuelos **nacionales de Colombia, de ida y regreso, directos o con escalas según un checkbox por alerta**, en rutas y fechas exactas definidas por el propietario, y avisarle **solamente** cuando se encuentre un itinerario válido cuyo precio total por un adulto sea menor o igual al máximo de esa alerta, aplicando las reglas de elegibilidad y máximo un aviso por alerta y revisión de la sección 5.4.
 >
-> **Advertencia:** SerpApi es un proveedor externo de resultados de Google Flights. **No es una API pública oficial proporcionada por Google Flights.** Sus resultados son precios observados, no reservas ni garantías de que permanezcan disponibles al finalizar una compra. **No se ha probado todavía una petición real con una clave del usuario.**
+> **Advertencia:** SerpApi es un proveedor externo de resultados de Google Flights. **No es una API pública oficial proporcionada por Google Flights.** Sus resultados son precios observados, no reservas ni garantías de que permanezcan disponibles al finalizar una compra. El propietario compartió una prueba manual real de V1.0.2 con ida y regreso asociado, precio coincidente y estado verificado. El JSON completo no se conservó y la evidencia cubre una sola salida candidata, no todas las combinaciones del mercado.
 
 ---
 
@@ -80,7 +81,7 @@ Cuando termine tu primera respuesta de análisis, DETENTE y espera mi aprobació
 | Tipo de itinerario | Solo **ida y vuelta**; casilla `Solo vuelos directos` editable por alerta, **activada por defecto**. Marcada: cero escalas en ambos trayectos. Desmarcada: permitir escalas. |
 | Aerolíneas | Consultar **todas las aerolíneas que SerpApi/Google Flights devuelva para la ruta nacional**, sin listas blancas por defecto. Catálogo nacional informativo actualizado mediante nuevas versiones de la APK, con fecha de revisión y fuentes. Incorporar operadores nuevos en los resultados aunque no figuren en el catálogo. No afirmar cobertura universal |
 | Segundo plano | Búsquedas persistentes con la interfaz cerrada normalmente, pantalla apagada y tras reiniciar, según restricciones del sistema; pruebas reales obligatorias, sin prometer ejecución exacta ni funcionamiento tras forzar detención. |
-| Notificaciones | Exclusivamente dentro del umbral: itinerario no notificado o precio estrictamente menor que su menor precio previamente notificado. **Máximo un aviso por alerta y revisión**, el más barato entre los elegibles para nuevo aviso; sin avisos por subidas o repeticiones del mismo itinerario |
+| Notificaciones | Dentro del umbral, **máximo un aviso por alerta y revisión**, por la tarifa verificada más baja, incluso cuando el mismo itinerario o importe se notificó antes |
 | Saldo oficial | Comprobar Account API antes de cada tanda manual o programada. Si falla, suspender las búsquedas de vuelos hasta recuperar la comprobación; conservar resultados y reintentar prudentemente. No continuar solo con el contador local |
 | Fuente de tarifas | Únicamente **SerpApi / Google Flights** en V1 |
 | Datos conservados | **Último precio/resultado por alerta y registro de notificaciones**, no series históricas ni gráficas |
@@ -120,7 +121,7 @@ Cuando termine tu primera respuesta de análisis, DETENTE y espera mi aprobació
 6. Aplicar el checkbox: **marcado**, exigir cero escalas tanto en ida como en regreso; **desmarcado**, permitir conexiones y verificar rigurosamente segmentos, aeropuertos y fechas reales. Guardar el número de escalas por trayecto.
 7. Validar que el precio corresponda a un itinerario de ida y vuelta para las fechas exigidas; evitar doble suma.
 8. Guardar **únicamente el último resultado de monitoreo** de cada alerta (y la mínima información necesaria para mostrarlo) y las notificaciones enviadas.
-9. Emitir **como máximo una notificación local por alerta y revisión**, por la oferta más barata entre las elegibles según la sección 5.4; evitar duplicados y no volver a avisar del mismo itinerario sin mejorar su menor precio previamente notificado.
+9. Emitir **como máximo una notificación local por alerta y revisión**, por la oferta verificada más barata bajo el máximo, aunque ya se haya notificado en otra revisión el mismo itinerario o importe. Reintentar de manera idempotente solo el mismo evento pendiente si se interrumpe el despacho.
 10. Mostrar el estado de ejecución, último precio, fecha/hora, fuente, problemas de verificación y consumo estimado de cuota.
 11. Mostrar las aerolíneas identificadas en las respuestas de la ruta (sin excluir ninguna por nombre/código), sus mejores itinerarios comprobados, y estado de cobertura parcial/no disponible; mantener un catálogo informativo de operadores nacionales actualizado mediante versiones de la APK, con fecha de revisión y fuentes, sin equipararlo a disponibilidad garantizada.
 12. Continuar el monitoreo con pantalla apagada o tras cerrar normalmente la interfaz; restablecer programación tras reinicio y verificarlo en dispositivo/emulador Android 13+, sujeto a las limitaciones documentadas.
@@ -167,7 +168,7 @@ app/
       data/repository/   # Implementaciones de repositorios
       security/          # Gestión de credenciales mediante Keystore
       background/        # WorkManager y planificador
-      notification/      # Notificaciones y deduplicación
+      notification/      # Notificaciones e idempotencia del despacho
       util/              # Formatos COP, zonas horarias, IATA
     res/
   src/test/              # Pruebas unitarias con fixtures JSON
@@ -223,15 +224,15 @@ Parámetros clave:
 7. Determinar el **precio total observado de ida y vuelta** usando el campo correcto de la etapa que represente la combinación elegida. La documentación ejemplifica `price` junto con `type: "Round trip"`, pero su semántica debe comprobarse con una respuesta real de ambas etapas: **no sumar por defecto `price` inicial + `price` del regreso**, pues podría duplicar la tarifa. Si la API proporciona precios individuales reales por trayecto, mostrarlos; si no, indicar “No disponible” para el desglose y mostrar únicamente el total observado.
 8. Comprobar moneda COP, precio positivo, cantidad de pasajeros 1 y que la oferta corresponda a las fechas/segmentos solicitados. Revisar el significado de cargos/impuestos: **no afirmar que todos los cargos y equipaje están incluidos si la respuesta no lo acredita**. Una alerta válida usa el **total observado para el itinerario completo** y se rotula como **precio observado en Google Flights**, sujeto a verificación en la aerolínea. No confundirlo con precio contractual de compra, reserva confirmada ni ocho cupos. Si la semántica del precio completo es ambigua, no alertar.
 9. Identificar **todas las aerolíneas presentes en la respuesta**; representar combinaciones de ida/vuelta de la misma aerolínea o combinadas, según fuente. Determinar mejores precios válidos por aerolínea de ida / combinación cuando exista cobertura. Seleccionar el **precio total válido más bajo entre las combinaciones realmente verificadas**, indicando si la exploración fue limitada por el cupo. No asegurar que sea el mínimo absoluto del mercado si no se revisaron todas las combinaciones.
-10. Para notificar, filtrar **todas las combinaciones verificadas en esta revisión** por umbral y elegibilidad de la sección 5.4; escoger la de menor precio entre las que puedan generar un nuevo aviso y enviar **como máximo uno por alerta y revisión**. No limitar esta selección al mínimo absoluto del paso anterior: si este ya fue notificado sin mejora, otra combinación nueva o mejorada puede ser elegible. Si no hay elegibles, **guardar último resultado pero no avisar**.
+10. Para notificar, filtrar **todas las combinaciones verificadas en esta revisión** por vigencia, validez y máximo de la sección 5.4; escoger la de menor precio y enviar **como máximo uno por alerta y revisión**, sin excluirla porque su itinerario o importe se notificó antes. Si no hay ofertas verificadas bajo el máximo, **guardar último resultado pero no avisar**.
 11. Cuando haya datos ambiguos o incompletos, registrar `NO_VERIFICADO` con causa; **no enviar notificación de oferta** ni presentar precio engañoso.
 
 **Datos parciales:** una tarifa vista en la primera etapa sin regreso confirmado no constituye oferta válida, aunque esté por debajo de 400.000 COP. La app la puede mostrar como dato parcial si ayuda al diagnóstico, pero **no como último precio de ida y vuelta validado**.
 
 ### Selección de candidatos y cuota
 
-- **Cobertura adaptativa:** intentar hasta **3 salidas candidatas** por revisión cuando haya suficiente saldo real y local; **no seleccionar las tres únicamente por mejor precio si ello invisibiliza otras aerolíneas**. Priorizar representantes de transportadores distintos entre candidatos disponibles y rotarlos en búsquedas posteriores para mejorar diversidad; seguir también el precio. No afirmar cobertura de todas las aerolíneas cuando solo se verificaron tres combinaciones. Seguir orden de prioridad y sin superar el presupuesto. Disminuir a 2 o 1 cuando sea necesario por cuota o equidad con otras alertas; cada solicitud de regreso consume una unidad potencial. Se permite finalizar anticipadamente al encontrar una oferta válida bajo el umbral **que sea elegible para un nuevo aviso según la sección 5.4**, si el objetivo es una alerta rápida, indicando que **no se verificaron todas las combinaciones**. Al finalizar, escoger como máximo un aviso entre las ofertas elegibles realmente verificadas, sin afirmar que se agotaron las demás opciones.
-- **No limitar incondicionalmente a una salida:** si la primera no tiene regreso válido conforme al checkbox, su precio supera el máximo o ya fue notificada sin mejora, intentar la siguiente candidata permitida por presupuesto; de lo contrario podrían pasarse por alto ofertas válidas y elegibles para un nuevo aviso.
+- **Cobertura adaptativa:** intentar hasta **3 salidas candidatas** por revisión cuando haya suficiente saldo real y local; **no seleccionar las tres únicamente por mejor precio si ello invisibiliza otras aerolíneas**. Priorizar representantes de transportadores distintos entre candidatos disponibles y rotarlos en búsquedas posteriores para mejorar diversidad; seguir también el precio. No afirmar cobertura de todas las aerolíneas cuando solo se verificaron tres combinaciones. Seguir orden de prioridad y sin superar el presupuesto. Disminuir a 2 o 1 cuando sea necesario por cuota o equidad con otras alertas; cada solicitud de regreso consume una unidad potencial. Se permite finalizar anticipadamente al encontrar una oferta válida bajo el umbral si el objetivo es una alerta rápida, indicando que **no se verificaron todas las combinaciones**. Al finalizar, escoger como máximo un aviso entre las ofertas realmente verificadas, sin afirmar que se agotaron las demás opciones.
+- **No limitar incondicionalmente a una salida:** si la primera no tiene regreso válido conforme al checkbox o su precio supera el máximo, intentar la siguiente candidata permitida por presupuesto.
 - Si ninguna de las salidas exploradas conduce a un precio completo válido, mostrar **“sin cotización verificable dentro de los candidatos consultados”**; nunca afirmar que no existen ofertas para todas las combinaciones.
 - Si hay evidencia suficiente de que el precio mostrado ya representa una tarifa de ida y vuelta, **igual verificar la existencia y características del regreso** antes de emitir alerta.
 - No establecer `max_price` como sustituto del análisis de precio: necesitamos conservar el último resultado incluso si supera el umbral.
@@ -279,8 +280,8 @@ Reglas generales: ida y vuelta, clase económica, un adulto y COP no son modific
 
 - Cambiar origen, destino, fechas o checkbox de directos **invalida la compatibilidad de la cotización anterior con la búsqueda vigente**. Conservarla solo como dato previo, rotulado con la ruta, fechas y filtro originales; exigir una nueva consulta y verificación antes de notificar para la nueva configuración.
 - Cambiar nombre o frecuencia **no invalida** una cotización compatible. La frecuencia modifica la programación, respetando cuota y concurrencia.
-- Cambiar el precio máximo no invalida el itinerario observado, pero **requiere una nueva consulta antes de emitir un aviso por esa modificación**; no notificar al guardar usando únicamente el precio almacenado. Seguir aplicando las reglas de deduplicación y mejora de la sección 5.4.
-- Ninguna edición elimina las huellas de avisos enviados ni el menor precio notificado por itinerario. Estos controles persisten hasta el vencimiento definitivo o eliminación de la alerta; los itinerarios distintos se identifican por sus propios segmentos, aeropuertos y fechas.
+- Cambiar el precio máximo no invalida el itinerario observado, pero **requiere una nueva consulta antes de emitir un aviso por esa modificación**; no notificar al guardar usando únicamente el precio almacenado.
+- Los resultados de una ejecución antigua no deben sobrescribir datos de criterios nuevos. Cada revisión nueva puede volver a notificar la menor tarifa que cumpla el máximo, sin filtrar por avisos anteriores.
 
 ### 5.2 Estados de una alerta
 
@@ -312,24 +313,24 @@ No guardar datos para trazar evolución, registros de todas las consultas, gráf
 - Si `directOnly=true`, ida y regreso son **directos**; si `directOnly=false`, pueden tener escalas siempre que la combinación, ruta, fechas y precio completo sean válidos.
 - Precio final de la combinación retornado por la fuente inequívoco, en COP, para 1 adulto.
 - Precio `<=` máximo configurado.
-- El itinerario **nunca se notificó**, o su precio es **estrictamente menor que el menor precio previamente notificado para ese mismo itinerario**; además, no se notificó antes exactamente la misma combinación al mismo precio.
+- La oferta es la tarifa verificada más baja de esta revisión que cumple el máximo configurado. No se consulta el historial de precios ni se excluye una oferta por haberse notificado antes el mismo itinerario o importe.
 
-**No enviar** por caídas de precio que permanezcan sobre el umbral, subidas o repeticiones de un itinerario ya avisado que no mejoren su menor precio notificado, vuelos con escalas **cuando el checkbox de directos esté marcado**, tarifas solo de ida, dudas de moneda, errores de red, falta de permiso, cotizaciones incompletas ni ausencia de vuelos.
+**No enviar** por precios sobre el umbral, vuelos con escalas **cuando el checkbox de directos esté marcado**, tarifas solo de ida, dudas de moneda, errores de red, falta de permiso, cotizaciones incompletas ni ausencia de vuelos.
 
-**Selección y cantidad:** enviar **como máximo una notificación por alerta y revisión**, tanto manual como automática. Primero filtrar todas las ofertas comprobadas por las condiciones anteriores y después escoger la de menor precio **entre las elegibles para un nuevo aviso**. Una opción más barata ya notificada sin mejora no bloquea otra combinación nueva o mejorada. Mostrar las demás opciones verificadas en el detalle de la búsqueda; no marcarlas como notificadas si no se enviaron. Usar el texto **“Mejor oferta verificada en esta revisión”**, acompañado de la advertencia de cobertura parcial cuando corresponda; no afirmar que es el mínimo de todo el mercado.
+**Selección y cantidad:** enviar **como máximo una notificación por alerta y revisión**, tanto manual como automática. Filtrar las ofertas completas y verificadas por vigencia y máximo, y escoger la de menor precio aunque esa tarifa o itinerario ya se haya avisado antes. Si no hay ninguna oferta verificada bajo el máximo, guardar el resultado sin aviso. Mostrar las demás opciones verificadas en el detalle; no marcarlas como avisadas si no fueron seleccionadas. Usar el texto **“Tarifa más baja verificada”**, acompañado de la advertencia de cobertura parcial cuando corresponda; no afirmar que es el mínimo de todo el mercado.
 
-**Deduplicación y mejora:** identificar cada itinerario con `alerta + aeropuertos + fechas/horarios + códigos/números de vuelo + segmentos de ida y regreso + moneda`, sin el precio; añadir `precio total` para la huella de un aviso concreto. Conservar por itinerario un único **menor precio previamente notificado**, además de las huellas, como estado operativo mínimo, sin una serie histórica de precios. Un itinerario diferente puede generar su primer aviso aunque sea más caro que otro ya notificado, siempre que cumpla el máximo. Para el mismo itinerario, si ya se avisó a $350.000 COP, no avisar a $370.000 ni a $350.000; sí puede avisarse a $340.000. Tras ese aviso a $340.000, un precio de $345.000 tampoco es elegible aunque no se hubiera notificado ese valor.
+**Repetición e idempotencia:** cada revisión crea un identificador único de despacho, distinto del identificador del itinerario. Ese ID permite recuperar el mismo evento sin duplicarlo tras una interrupción; una revisión posterior crea un ID nuevo y puede avisar de nuevo el mismo precio. No conservar un mínimo notificado para filtrar tarifas futuras.
 
-La misma combinación y precio no debe generar repetición cada ciclo, ni después de reiniciar. Si el precio sube y vuelve a un valor previamente avisado, mantenerlo deduplicado hasta que la alerta venza o sea eliminada. **Las huellas y el menor precio notificado por itinerario deben persistir separados del listado visible de 100 avisos:** borrar avisos o purgar los más antiguos no debe volver a disparar mensajes idénticos ni subidas. Asegurar atomicidad con transacciones Room para evitar duplicados por concurrencia entre búsqueda manual y Worker. **Sin permiso de notificaciones, no marcar un evento como “enviado”, no actualizar el menor precio notificado ni bloquear indefinidamente un futuro aviso de la misma oferta.**
+El mismo evento de despacho no debe publicarse dos veces durante recuperación; una revisión posterior debe poder notificar de nuevo la misma combinación y precio. La lista visible contiene hasta 100 despachos y puede limpiarse sin afectar alertas futuras. Asegurar atomicidad con transacciones Room para evitar duplicar un mismo evento por reintento. **Sin permiso de notificaciones, no marcar un evento como “enviado”; tras habilitarlo, la siguiente revisión válida puede avisar de nuevo la tarifa más baja.**
 
 Formato de ejemplo **ficticio**:
 
 > ✈️ Oferta detectada — CTG ⇄ CLO  
 > 25–28 mar. 2027 · 1 adulto · **$378.000 COP ida y vuelta**  
-> Mejor oferta verificada en esta revisión.  
+> Tarifa más baja verificada.
 > Aerolínea y horarios disponibles en la app. Precio observado sujeto a cambio.
 
-El toque abre el detalle exacto de la alerta. Las notificaciones se guardan localmente en una lista (por defecto conservar las **100 últimas**, eliminado primero el registro más antiguo); incluir botón “Borrar notificaciones” con confirmación. Guardar las huellas de deduplicación mínimas necesarias sin mantener historial de tarifas. Mostrar advertencia cuando el permiso de notificaciones esté desactivado.
+El toque abre el detalle exacto de la alerta. Las notificaciones se guardan localmente en una lista (por defecto conservar las **100 últimas**, eliminado primero el registro más antiguo); incluir botón “Borrar notificaciones” con confirmación. Conservar solo el ID técnico necesario para reintentar idempotentemente el mismo despacho; no deduplicar futuras tarifas. Mostrar advertencia cuando el permiso de notificaciones esté desactivado.
 
 ---
 
@@ -456,6 +457,7 @@ Diseñar el esquema exacto durante implementación, manteniendo **estos concepto
 - `verifiedTotalCop` nullable, `verifiedAt` nullable, `currency`.
 - `outboundFlightSummary`, `returnFlightSummary` en campos normalizados o estructura mínima, incluyendo `outboundStops`/`returnStops` y transportadores de ambos trayectos.
 - `lastSearchAirlineSummary` como pequeño resumen **solo de la consulta más reciente** por alerta (aerolíneas devueltas, estado por operador, mínimo válido para ruta+fechas cuando exista, cobertura parcial), sobreescribible y sin serie temporal.
+- Opciones verificadas de la última revisión exitosa, suficientes para presentar las alternativas observadas en el detalle; una falla puede conservarlas como resultado previo con sus criterios/fecha originales. No almacenar consultas anteriores como historial.
 - `sourceLink` opcional y comprobado, `explorationLimited`, `appliedDirectOnly` y `dataFreshnessNote`.
 - Identidad de la búsqueda aplicada (origen, destino, fechas y filtro), suficiente para distinguir una cotización previa de la configuración actual al editar la alerta; no notificar con un resultado de configuración anterior.
 - **Un solo resultado vigente por alerta**, no tabla histórica de tarifas.
@@ -463,18 +465,16 @@ Diseñar el esquema exacto durante implementación, manteniendo **estos concepto
 ### `SentNotificationEntity`
 
 - `id`, `alertId`, `fingerprint`, `priceCop`, `sentAt`, `routeDateSummary`, `flightSummary`.
-- Límite de retención visible por defecto: últimas **100**; la tabla de avisos puede purgarse y borrarse sin eliminar huellas de deduplicación hasta el vencimiento/eliminación de cada alerta.
+- Límite de retención visible por defecto: últimos **100** despachos. Limpiar ese registro no afecta las notificaciones de futuras revisiones.
 
-### `NotifiedFingerprintEntity` (puede integrarse en una tabla equivalente)
+### ID de despacho (puede integrarse en una tabla equivalente)
 
-- `alertId`, `fingerprintHash`, `firstSentAt`; sin el JSON completo ni una serie histórica de precios.
-- Purgar al eliminar o vencer definitivamente la alerta. **No borrar estas huellas al vaciar la lista de notificaciones.**
+- `alertId`, `deliveryId`, `sentAt`; cada revisión tiene un ID único usado solo para reintentar idempotentemente ese despacho.
+- No usar el ID de despacho para deduplicar itinerarios o tarifas de futuras revisiones.
 
-### Estado mínimo de mejora por itinerario (tabla equivalente permitida)
+### Compatibilidad con estado legado de precio notificado
 
-- `alertId`, `itineraryIdentityHash` (identidad sin precio de la sección 5.4), `lowestNotifiedTotalCop` y moneda.
-- Conservar **un único menor precio notificado por itinerario**, actualizado únicamente cuando se envíe un aviso elegible; no registrar cada precio observado ni crear un historial de evolución.
-- Mantener este estado separado de los 100 avisos visibles y persistirlo junto con la deduplicación, con controles transaccionales. Borrar avisos o editar una alerta no lo reinicia; purgar al eliminar o vencer definitivamente la alerta.
+- Si una versión previa conserva mínimos por itinerario, pueden permanecer en Room por compatibilidad, pero V1.0.4 y posteriores no los consultan para decidir si notificar.
 
 ### `ApiBudgetEntity`
 
@@ -504,7 +504,7 @@ Diseñar el esquema exacto durante implementación, manteniendo **estos concepto
 | Moneda distinta a COP | No notificar ni convertir mediante tasa supuesta |
 | API devuelve precio pero no puede vincularse a combinación real | No notificar |
 | Mismo vuelo, fecha y precio previamente notificados | No repetir notificación |
-| Mismo itinerario a un precio igual o superior a su menor precio notificado | No avisar, aunque ese valor concreto no hubiera aparecido antes; exigir mejora estricta y cumplimiento del máximo |
+| Tarifa repetida en otra revisión | Volver a notificar si es la menor oferta verificada bajo el máximo actual |
 | Varias ofertas elegibles en una revisión | Enviar como máximo un aviso por alerta: el más barato entre los elegibles; mostrar las demás verificadas en el detalle, sin marcarlas como notificadas |
 | Aeropuerto de origen o destino fuera de Colombia | Rechazar la configuración por estar fuera del alcance nacional de V1 |
 | Android retrasa el Worker | Mostrar última ejecución real; no prometer puntualidad |
@@ -547,7 +547,7 @@ No tomar la falta de resultados de una consulta parcial como evidencia de que no
 
 - Validar cada dirección, fecha, conexiones según el checkbox, precios y moneda; identificar operadores sin filtros de exclusión y mostrar claramente la cobertura parcial.
 - Controlar presupuesto global **contrastado con Account API antes de cada tanda**, bloqueo si falla esa comprobación, exclusión de los GET de cuenta del límite local de vuelos, exploración adaptativa hasta 3 salidas, distribución justa y tratamiento de errores.
-- Persistir huellas y menor precio notificado por itinerario, elegir como máximo un aviso por alerta y revisión entre ofertas elegibles y gestionar concurrencia entre manual y WorkManager.
+- Persistir un ID de despacho para recuperar idempotentemente el mismo evento, elegir como máximo un aviso por alerta y revisión por la tarifa verificada más baja bajo el máximo y gestionar concurrencia entre manual y WorkManager.
 
 ### Fase 4 — WorkManager y notificaciones
 
@@ -589,18 +589,18 @@ No gastar llamadas reales para pruebas unitarias: usar fixtures JSON anónimos y
 **Dominio / reglas:**
 
 10. Precio igual al umbral: **sí** es elegible; mayor que el umbral: **no**.
-11. Itinerario nunca notificado bajo el umbral: elegible para el único aviso de la revisión; un itinerario nuevo puede ser elegible aunque sea más caro que otro ya avisado.
-12. Misma oferta al mismo precio repetida en 10 ejecuciones: **una sola notificación**.
-13. Precio estrictamente menor que el menor precio previamente notificado para el mismo itinerario: nuevo aviso elegible si cumple el máximo. Tras avisar a $350.000 y luego a $340.000, no avisar a $345.000, $350.000 ni $370.000.
-13a. Varias ofertas elegibles en una revisión: como máximo un aviso por alerta, por la más barata entre las elegibles, tanto en búsqueda manual como automática.
-13b. El mínimo de la revisión ya fue notificado y no mejora: otra combinación nueva o mejorada puede generar el aviso; las opciones no seleccionadas no se marcan como notificadas.
+11. Toda oferta verificada bajo el máximo es elegible aunque ese itinerario o precio se haya notificado en otra revisión.
+12. Misma oferta al mismo precio en 10 revisiones válidas: **un aviso por revisión (10 avisos)**.
+13. Variación al alza, a la baja o repetición del mismo precio: en cada revisión notificar la tarifa verificada más baja bajo el máximo.
+13a. Varias ofertas bajo el máximo en una revisión: como máximo un aviso por alerta, por la tarifa más baja, tanto en búsqueda manual como automática.
+13b. Varias ofertas bajo el máximo: seleccionar la más barata; las opciones no seleccionadas no generan aviso.
 14. Alerta pausada/vencida/sin permiso: manejo correcto.
 15. Fechas regresivas, origen=destino, IATA inválidos o aeropuertos fuera de Colombia, valor cero, campos vacíos: validación impide guardar configuraciones inválidas.
-15a. Cambiar nombre o frecuencia no invalida una cotización compatible; cambiar máximo no notifica al guardar y exige nueva consulta antes de avisar por el nuevo umbral. Las ediciones no borran deduplicación ni menor precio notificado.
+15a. Cambiar nombre o frecuencia no invalida una cotización compatible; cambiar máximo no notifica al guardar y exige nueva consulta antes de avisar por el nuevo umbral.
 16. Dos alertas comparten cupo; bloquear al llegar al techo.
 17. Una revisión de ida y vuelta no cuenta artificialmente como un único GET.
 18. Manual y Worker simultáneos no duplican cobros ni avisos.
-19. Retención del último resultado tras cierre, retención visible de notificaciones con máximo 100 y borrado explícito; **verificar que borrar notificaciones no elimina huellas ni menor precio notificado por itinerario**, incluso tras reiniciar.
+19. Retención del último resultado tras cierre, retención visible de notificaciones con máximo 100 y borrado explícito; tras limpiar, la siguiente revisión válida vuelve a avisar la tarifa más baja.
 20. La clave nunca aparece en logs ni queda en repositorio, fixture o APK como cadena literal.
 
 **Pruebas de Android (instrumentadas cuando sea posible):**
@@ -614,12 +614,12 @@ No gastar llamadas reales para pruebas unitarias: usar fixtures JSON anónimos y
 26a. Cada tanda manual o programada comprueba primero el saldo oficial; si falla, no se inicia ningún GET de vuelos, aunque haya clave validada, saldo antiguo o cupo local. Tras recuperar comprobación válida y ambos presupuestos suficientes, puede reanudarse.
 26b. Los GET gratuitos de Account API no reservan unidades del límite local de búsquedas; cada GET de vuelos sí lo hace y reduce la capacidad conservadora restante de la tanda, incluso ante fallos de conexión.
 27. Saldo real insuficiente bloquea llamadas aunque el contador local indique disponibilidad; diferencias se muestran claramente.
-28. Un primer candidato con regreso no válido, precio sobre el máximo o ya notificado sin mejora no impide examinar candidatos siguientes cuando queda presupuesto; el cierre anticipado por oferta exige elegibilidad para un nuevo aviso.
+28. Un primer candidato con regreso no válido o precio sobre el máximo no impide examinar candidatos siguientes cuando queda presupuesto; el cierre anticipado exige una oferta válida bajo el máximo.
 29. Desglose de precio por trayecto ausente: mostrar “No disponible”, no inventar cifras ni sumar dos totales.
 30. Una oferta bajo el límite cuando las notificaciones están deshabilitadas no se marca falsamente como “enviada”; al habilitarlas, puede enviarse si sigue vigente.
 31. Borrar el registro visual de notificaciones no provoca alertas duplicadas antiguas.
 32. Simular dispositivo sin conexión, app forzada a detener, reinicio, batería restringida y recuperación sin prometer ejecuciones exactas.
-33. Verificar generación y firma del APK release con clave propia estable y entrega adicional del APK debug; instalar y lanzar el release cuando haya dispositivo/emulador. Comprobar actualización release sobre release con la misma identidad y firma, conservando alertas, configuración y deduplicación; no declarar pruebas no ejecutadas.
+33. Verificar generación y firma del APK release con clave propia estable y entrega adicional del APK debug; instalar y lanzar el release cuando haya dispositivo/emulador. Comprobar actualización release sobre release con la misma identidad y firma, conservando alertas y configuración; no declarar pruebas no ejecutadas.
 34. El ejemplo se crea una vez en una instalación nueva y queda pausado; eliminarlo y comprobar que no reaparece al abrir, reiniciar o actualizar. Una instalación limpia puede crearlo nuevamente.
 35. Catálogo informativo con fecha de revisión y fuentes, distribuido con la APK sin actualización remota automática; una nueva versión actualiza ese catálogo conservando las alertas. Un operador desconocido devuelto por SerpApi aparece en los resultados sin esperar esa actualización.
 
@@ -683,24 +683,28 @@ No gastar llamadas reales para pruebas unitarias: usar fixtures JSON anónimos y
 
 ## 17. Checklist de entrega final y definición de «terminado» (auditoría definitiva)
 
+El estado actual de cada criterio se registra en [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md). Ese informe distingue implementación, pruebas aprobadas, cobertura parcial y pruebas en teléfono físico todavía no ejecutadas; esta especificación sigue definiendo los criterios vinculantes.
+
+En esta lista, `[x]` significa que el criterio tiene evidencia suficiente conforme a su alcance; `[ ]` significa que está parcial o que falta una prueba de aceptación. El informe enlazado explica cada caso y no permite interpretar un `[ ]` como función ausente automáticamente.
+
 - [ ] El proyecto abre en Android Studio y **Gradle compila limpiamente** con un JDK/SDK documentados.
-- [ ] Los **APK debug y release firmado con clave propia estable se generan realmente**, con ubicación y nombre exactos entregados. Si existe dispositivo/emulador compatible, se instala y lanza el release y se comprueba una actualización release sobre release con la misma identidad y firma preservando datos; si no existe, reportar esas pruebas como **no ejecutadas**. Documentar custodia segura de la clave de firma y sus credenciales; cualquier artefacto faltante queda pendiente o bloqueado explícitamente.
+- [x] Los **APK debug y release firmado con clave propia estable se generan realmente**, con ubicación y nombre exactos entregados. Si existe dispositivo/emulador compatible, se instala y lanza el release y se comprueba una actualización release sobre release con la misma identidad y firma preservando datos; si no existe, reportar esas pruebas como **no ejecutadas**. Documentar custodia segura de la clave de firma y sus credenciales; cualquier artefacto faltante queda pendiente o bloqueado explícitamente.
 - [ ] La app acepta una API key ingresada por UI, la cifra con Keystore, comprueba el saldo por Account API y **no registra secretos**, ni en errores HTTP ni en la respuesta de cuenta.
-- [ ] Se valida con JSON real **al menos un itinerario** de ida y vuelta usando `departure_token`, **solo tras autorización para consumir cuota**, o se declara formalmente bloqueada la integración real.
+- [x] Se validó con la app V1.0.2 y respuestas reales **un itinerario** de ida y vuelta usando `departure_token`, tras la consulta manual del propietario: dos GET HTTP 200, regreso asociado válido y total Round trip coincidente. Evidencia y límites: `docs/INFORME_IMPLEMENTACION_V1.md`; no se conserva el JSON crudo y no prueba la cobertura completa.
 - [ ] El checkbox `Solo vuelos directos` aparece por alerta, inicialmente marcado. Marcado filtra ida y regreso sin escalas; desmarcado admite conexiones, valida las rutas y fechas exactas y notifica únicamente por **precio total observado**, en COP, por adulto, con `precio <= umbral`.
 - [ ] V1 admite únicamente rutas entre aeropuertos de Colombia y valida su identidad y país, además del formato IATA; las rutas internacionales se rechazan claramente.
 - [ ] La consulta por defecto no filtra aerolíneas y la UI muestra operadores encontrados, incluidos desconocidos en el catálogo, combinaciones mixtas y un catálogo nacional informativo actualizado mediante versiones de APK, con fecha de revisión y fuentes. No incorpora actualización automática remota ni declara cobertura total. Aerolíneas ausentes no se presentan como inexistentes o sin vuelos confirmados.
-- [ ] Se explica al propietario que el resultado no garantiza disponibilidad al pagar, ocho cupos, impuestos/equipaje no acreditados o un precio de cada trayecto cuando SerpApi no lo desglosa.
+- [x] Se explica al propietario que el resultado no garantiza disponibilidad al pagar, ocho cupos, impuestos/equipaje no acreditados o un precio de cada trayecto cuando SerpApi no lo desglosa.
 - [ ] Múltiples alertas: crear, editar, pausar, reanudar, eliminar, consultar manual y programar frecuencia; impedir consumo descontrolado y advertir sobre cobertura parcial.
-- [ ] Cambiar ruta, fechas o filtro de escalas invalida la compatibilidad de la cotización anterior y exige nueva verificación. Nombre o frecuencia no invalidan cotizaciones compatibles; cambiar el máximo exige una nueva consulta antes de avisar por esa modificación. Las ediciones no reinician deduplicación ni menor precio notificado.
+- [ ] Cambiar ruta, fechas o filtro de escalas invalida la compatibilidad de la cotización anterior y exige nueva verificación. Nombre o frecuencia no invalidan cotizaciones compatibles; cambiar el máximo exige una nueva consulta antes de avisar por esa modificación.
 - [ ] Contador local **y** saldo real de SerpApi independientes; saldo oficial comprobado antes de cada tanda manual o programada, bloqueo si falla la comprobación y reanudación prudente al recuperarse con ambos presupuestos suficientes. Cada GET de vuelos reserva una unidad local y reduce la capacidad conservadora de la tanda; los GET gratuitos de Account API quedan excluidos de ese límite local.
-- [ ] Máximo **un aviso por alerta y revisión**, el más barato entre las ofertas elegibles: itinerario nunca notificado o mejora estricta de su menor precio previamente notificado, siempre dentro del máximo. Una oferta mínima ya avisada sin mejora no bloquea otra elegible. La notificación dice “Mejor oferta verificada en esta revisión” y no atribuye cobertura exhaustiva.
-- [ ] Último precio, estado y hora persistidos sin historial de precios; avisos guardados, huellas y único menor precio notificado por itinerario persistentes incluso si se limpia la lista o se purgan sus registros antiguos.
+- [ ] Máximo **un aviso por alerta y revisión**, siempre por la tarifa verificada más baja bajo el máximo aunque se haya avisado el mismo precio antes. La notificación indica “Tarifa más baja verificada” y no atribuye cobertura exhaustiva.
+- [ ] Último precio, estado y hora persistidos sin historial de precios; registro visible de hasta 100 avisos. Limpiar el registro no impide notificar la tarifa más baja en la próxima revisión.
 - [ ] Alerta de ejemplo creada una sola vez en instalación nueva, pausada y sin recreación tras eliminarla, abrir, reiniciar o actualizar; una instalación limpia puede volver a crearla.
 - [ ] WorkManager se prueba **realmente** ejecutando una revisión programada con app cerrada normalmente y pantalla bloqueada/apagada; se valida reprogramación tras reinicio del dispositivo cuando es posible; se documentan detención forzada, Doze, red desconectada y ahorro de batería, con evidencia y clasificación aprobado/fallido/no ejecutado.
-- [ ] Se realizan pruebas automáticas offline de parser, precio, fecha, directos, cuota, concurrencia, deduplicación, errores y UI, y se informa **aprobadas/fallidas/no ejecutadas**.
-- [ ] Entrega de `README.md` con requisitos, pasos de compilación, dónde instalar la APK, permisos, explicación de cuota, observaciones de seguridad y limitaciones conocidas.
-- [ ] Reporte final conciso: **implementado / pendiente / bloqueado**, evidencia de compilación y pruebas, número exacto de búsquedas reales consumidas y pasos manuales restantes.
+- [ ] Se realizan pruebas automáticas offline de parser, precio, fecha, directos, cuota, concurrencia, idempotencia del despacho, errores y UI, y se informa **aprobadas/fallidas/no ejecutadas**.
+- [x] Entrega de `README.md` con requisitos, pasos de compilación, dónde instalar la APK, permisos, explicación de cuota, observaciones de seguridad y limitaciones conocidas.
+- [x] Reporte final conciso: **implementado / pendiente / bloqueado**, evidencia de compilación y pruebas, número exacto de búsquedas reales consumidas y pasos manuales restantes.
 
 **Regla de bloqueo:** si los resultados reales de SerpApi no permiten demostrar una tarifa única de ida y regreso válida según la configuración de escalas asociada a las fechas elegidas, el módulo de **notificaciones de ofertas** no se activa con valores supuestos. Codex documenta el bloqueo y pide decisión al propietario, sin sustituir automáticamente el proveedor aprobado.
 
@@ -727,8 +731,8 @@ No gastar llamadas reales para pruebas unitarias: usar fixtures JSON anónimos y
 
 - Una comparación de precio se refiere al **total observado de ida y vuelta para un adulto** en COP, no al precio de salida, al mínimo mensual ni al precio medio de la ruta.
 - El API puede devolver tarifas que cambien al pulsar el enlace o añadir equipaje. El mensaje debe decir “precio observado; verifica condiciones antes de comprar”, sin afirmar disponibilidad para ocho personas.
-- Conservar separados del registro visual de avisos las huellas y un único menor precio notificado por itinerario; borrar notificaciones no vuelve a crear promociones antiguas ni habilita avisos por subidas. No almacenar una serie histórica de cotizaciones para aplicar esta regla.
-- Emitir como máximo un aviso por alerta y revisión, por la oferta más barata entre las elegibles, conforme a la sección 5.4; mantener visibles las demás opciones verificadas sin marcarlas como notificadas.
+- Conservar el ID técnico de cada despacho pendiente para recuperar idempotentemente ese mismo evento; no usarlo ni usar mínimos previos para impedir avisos en revisiones nuevas. No almacenar una serie histórica de cotizaciones.
+- Emitir como máximo un aviso por alerta y revisión, por la tarifa verificada más baja bajo el máximo, incluso si el mismo itinerario/precio se avisó antes; mantener visibles las demás opciones verificadas.
 - Si una revisión parcial comprueba tres candidatos, no afirmar que se han agotado todas las alternativas o que no hay ofertas en el mercado.
 
 ### 18.4. Operaciones seguras para Codex
@@ -746,12 +750,12 @@ La entrega incluye el **código Kotlin íntegro**, recursos y Gradle Wrapper, `R
 
 ## 19. Resumen de aprobación y advertencias no bloqueantes
 
-**Decisiones ya aprobadas por el propietario:** Android 13+, Kotlin, APK privada release firmada con clave propia estable y debug para pruebas, múltiples alertas de rutas nacionales de Colombia, frecuencia configurable, checkbox `Solo vuelos directos` (por defecto marcado, desmarcable), operadores dinámicos hasta donde SerpApi los devuelve y catálogo informativo actualizado por versiones de APK con fecha de revisión y fuentes, ejecución comprobable en segundo plano dentro de límites Android, SerpApi como única fuente de tarifas, máximo un aviso por alerta y revisión por la oferta más barata entre las elegibles dentro del máximo, nuevo aviso del mismo itinerario solo si mejora su menor precio notificado, un adulto, último precio + avisos, tema claro. Comprobar saldo oficial antes de cada tanda y suspender búsquedas si falla, sin continuar solo con el contador local; Account API gratuita queda fuera del límite local de vuelos. Aplicar los efectos de edición de la sección 5.1 y no recrear el ejemplo eliminado dentro de la instalación vigente.
+**Decisiones ya aprobadas por el propietario:** Android 13+, Kotlin, APK privada release firmada con clave propia estable y debug para pruebas, múltiples alertas de rutas nacionales de Colombia, frecuencia configurable, checkbox `Solo vuelos directos` (por defecto marcado, desmarcable), operadores dinámicos hasta donde SerpApi los devuelve y catálogo informativo actualizado por versiones de APK con fecha de revisión y fuentes, ejecución comprobable en segundo plano dentro de límites Android, SerpApi como única fuente de tarifas, máximo un aviso por alerta y revisión por la tarifa verificada más baja dentro del máximo, incluso si se avisó el mismo itinerario o importe anteriormente, un adulto, último precio + avisos, tema claro. Comprobar saldo oficial antes de cada tanda y suspender búsquedas si falla, sin continuar solo con el contador local; Account API gratuita queda fuera del límite local de vuelos. Aplicar los efectos de edición de la sección 5.1 y no recrear el ejemplo eliminado dentro de la instalación vigente.
 
 **Configuración inicial propuesta en este documento:** casilla `Solo vuelos directos` marcada, modo `Todas las aerolíneas`, frecuencia de 24 h modificable a 6/8/12/24 h, tope local conservador de **200 GET de vuelos iniciados / 30 días**, sin descontar Account API, 3 candidatos de ida como máximo por ronda si la cuota lo permite, y alerta Cartagena–Cali de ejemplo pausada, creada una sola vez en una instalación nueva. Estos son valores técnicos de partida, no datos observados en vuelos.
 
 **Limitaciones que deben explicarse:** tarifas observadas ≠ reserva; búsquedas de un adulto ≠ disponibilidad para ocho pasajeros; datos cacheados pueden estar desactualizados; Android no garantiza revisar con puntualidad; la casilla define si se aceptan escalas; solo se vigilan combinaciones exploradas dentro de la cuota; Google Flights no asegura cobertura universal de operadores colombianos.
 
-**Puerta de validación pendiente:** uso de una clave personal de SerpApi y una consulta real autorizada para interpretar la respuesta de ida y vuelta. La app no debe presentar resultados ficticios como reales.
+**Validación real existente:** el propietario aportó una prueba manual ejecutada con la app V1.0.2 para CTG–CLO, 2027-01-25/2027-02-03: dos GET de vuelos HTTP 200, salida y regreso asociados marcados `Round trip`, mismo precio y `VERIFICADO` por COP 599.350. Coincide con la opción JetSMART de igual importe de la captura manual de Google Flights. El presupuesto local pasó de 2/200 a 4/200; la cuenta mostraba uso 6/250, por lo que dos búsquedas mensuales no figuran en el contador local de la app. Esta prueba confirma solo una salida candidata y no valida ejecución automática de WorkManager, precio al comprar ni cobertura del mercado. La app no presenta fixtures como resultados reales.
 
-**Alcance de esta aprobación V1.4:** incorpora al documento las recomendaciones aceptadas por el propietario. La programación y las consultas reales que consuman cuota siguen sujetas a las autorizaciones expresas de la sección 0; esta actualización documental no afirma que la app esté implementada, compilada o probada.
+**Alcance de esta aprobación V1.4:** incorpora las decisiones funcionales aprobadas y se mantiene como contrato del producto. La autorización posterior del propietario permitió implementar la app; la evidencia actual, los límites y las verificaciones aún pendientes están en el informe V1 enlazado en la sección 17.

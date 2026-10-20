@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,6 +55,83 @@ class SerpApiJsonParserTest {
         assertEquals(1, parsed.malformedOptions)
         assertTrue(parsed.airlinesDetected.contains("Wingo"))
         assertTrue(parsed.airlinesDetected.contains("Aerolínea rota"))
+    }
+
+    @Test
+    fun acceptsEmptyFlightListsButDoesNotTreatMissingOrWrongShapedListsAsNoResults() {
+        val raw = fixture("outbound.json").toMutableMap()
+        raw["best_flights"] = Json.parseToJsonElement("[]")
+        raw["other_flights"] = Json.parseToJsonElement("[]")
+
+        assertTrue(parser.parse(JsonObject(raw)).options.isEmpty())
+
+        raw.remove("best_flights")
+        raw.remove("other_flights")
+        assertEquals("INVALID_RESPONSE", runCatching { parser.parse(JsonObject(raw)) }.exceptionOrNull()?.message)
+
+        raw["best_flights"] = Json.parseToJsonElement("{}")
+        raw["other_flights"] = Json.parseToJsonElement("[]")
+        assertEquals("INVALID_RESPONSE", runCatching { parser.parse(JsonObject(raw)) }.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun rejectsNotReadyAndServiceErrorResponsesWithDistinctCategories() {
+        val pending = fixture("outbound.json").toMutableMap()
+        val pendingMetadata = (pending["search_metadata"] as JsonObject).toMutableMap()
+        pendingMetadata["status"] = Json.parseToJsonElement("\"Processing\"")
+        pending["search_metadata"] = JsonObject(pendingMetadata)
+        assertEquals("SEARCH_NOT_READY", runCatching { parser.parse(JsonObject(pending)) }.exceptionOrNull()?.message)
+
+        val serviceError = fixture("outbound.json").toMutableMap()
+        serviceError["error"] = Json.parseToJsonElement("\"Invalid API key\"")
+        assertEquals("SERVICE_ERROR", runCatching { parser.parse(JsonObject(serviceError)) }.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun nonPositiveFractionalAndOverflowPricesAreNeverParsedAsCopAmounts() {
+        val raw = fixture("outbound.json").toMutableMap()
+        raw["best_flights"] = Json.parseToJsonElement(
+            """[
+                {"flights":[{"departure_airport":{"id":"CTG"},"arrival_airport":{"id":"CLO"}}],"price":0},
+                {"flights":[{"departure_airport":{"id":"CTG"},"arrival_airport":{"id":"CLO"}}],"price":-1},
+                {"flights":[{"departure_airport":{"id":"CTG"},"arrival_airport":{"id":"CLO"}}],"price":1.5},
+                {"flights":[{"departure_airport":{"id":"CTG"},"arrival_airport":{"id":"CLO"}}],"price":9223372036854775808}
+            ]""",
+        )
+        raw["other_flights"] = Json.parseToJsonElement("[]")
+
+        val parsed = parser.parse(JsonObject(raw))
+
+        assertEquals(4, parsed.options.size)
+        assertTrue(parsed.options.all { it.priceCop == null })
+    }
+
+    @Test
+    fun mathematicallyIntegralDecimalPriceIsReadAsWholeCop() {
+        val raw = fixture("outbound.json").toMutableMap()
+        raw["best_flights"] = Json.parseToJsonElement(
+            """[{"flights":[{"departure_airport":{"id":"CTG"},"arrival_airport":{"id":"CLO"}}],"price":320000.00}]""",
+        )
+        raw["other_flights"] = Json.parseToJsonElement("[]")
+
+        assertEquals(320_000L, parser.parse(JsonObject(raw)).options.single().priceCop)
+    }
+
+    @Test
+    fun malformedAirportAndInvalidLocalTimeAreHandledConservatively() {
+        val raw = fixture("outbound.json").toMutableMap()
+        raw["other_flights"] = Json.parseToJsonElement(
+            """[
+                {"flights":[{"departure_airport":{"id":"CTG","time":"not a date"},"arrival_airport":{"id":"CLO","time":"2027-03-25 11:00"}}],"price":300000},
+                {"flights":[{"departure_airport":{"id":"CTGX"},"arrival_airport":{"id":"CLO"}}],"price":300000}
+            ]""",
+        )
+
+        val parsed = parser.parse(JsonObject(raw))
+
+        assertEquals(2, parsed.options.size) // the valid best-flight fixture remains available
+        assertEquals(1, parsed.malformedOptions)
+        assertNull(parsed.options.last().segments.first().departure.localDateTime)
     }
 
     private fun fixture(name: String): JsonObject =

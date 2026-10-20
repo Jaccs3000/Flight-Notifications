@@ -1,11 +1,13 @@
 # Plan técnico de desarrollo — Primera APK de prueba de SerpApi
 
+> **Plan histórico del PoC 0.1.0; no describe el alcance pendiente de la aplicación actual.** La V1 definitiva y su estado se documentan en [PLAN_APP_DEFINITIVA.md](PLAN_APP_DEFINITIVA.md), [REQUIREMENTS.md](REQUIREMENTS.md) y [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md). Este plan se conserva para registrar la intención y las decisiones que llevaron a la prueba inicial.
+
 **Versión del plan:** 1.0  
 **Fecha:** 19 de octubre de 2026, America/Bogota  
 **Proyecto:** `C:\Flight Notifications`  
 **Versión prevista de la APK básica:** `0.1.0`, `versionCode = 1`  
 **Nombre visible propuesto:** `Prueba de vuelos — SerpApi`  
-**Estado:** implementación inicial en curso. Hay código Kotlin, configuración Gradle, pruebas y documentación; compilación, instalación y ejecución aún no verificadas. No se han hecho llamadas a SerpApi.  
+**Estado de esta instantánea:** plan de PoC histórico; la implementación básica se completó en etapas anteriores. La app vigente es V1.0.1 y la evidencia actual está en [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md). No usar este estado/entrega de PoC para inferir el estado de la versión actual.
 **Fuente principal de requisitos:** [REQUIREMENTS.md](REQUIREMENTS.md), versión 1.4, especialmente las secciones 4, 7, 8, 12, 13 y 17.
 
 ## 1. Propósito y relación con la aplicación completa
@@ -563,7 +565,7 @@ Los pasos se ejecutarán en orden. Cada salida se revisará antes de depender de
 
 ## 17. Matriz de pruebas previstas
 
-**Situación actual de todos los casos de aplicación:** no ejecutados. Esta matriz define qué se hará; la lectura del documento y la consulta de documentación no constituyen pruebas de la APK.
+**Estado histórico al redactar este plan:** los casos estaban pendientes. Esta matriz definía qué se haría para el PoC; no representa la verificación de V1.0.1. Consulta la matriz vigente en [docs/INFORME_IMPLEMENTACION_V1.md](docs/INFORME_IMPLEMENTACION_V1.md).
 
 | ID | Nivel | Caso y resultado esperado |
 |---|---|---|
@@ -711,7 +713,7 @@ Cambiar de proveedor, consultar directamente aerolíneas, comprar un plan o ampl
 
 ## 22. Criterios de aceptación de la APK básica
 
-Todos estos criterios están **pendientes** al crear el plan. Al entregar se marcarán con evidencia y resultado; un criterio no ejecutado no se contabiliza como aprobado.
+**Checklist histórico de la APK PoC 0.1.0, pendiente al crear este plan.** No es el checklist de V1.0.1; el estado actual está en `REQUIREMENTS.md` §17 y `docs/INFORME_IMPLEMENTACION_V1.md`.
 
 - [ ] El proyecto abre o se construye por CLI con toolchain documentado y dependencias fijas; no depende del Java 8 accidental.
 - [ ] Se genera y localiza el APK debug.
@@ -820,7 +822,9 @@ Las consultas a sitios de referencia no usaron una clave ni ejecutaron búsqueda
 
 Esta tabla registra el estado inicial de la planificación y no el estado vigente del código. La decisión de pasar al monitoreo completo dependerá de los resultados comprobados de esta primera APK y de la aprobación del propietario.
 
-## 27. Estado de implementación al 19 de octubre de 2026
+## 27. Estado inicial de implementación registrado en el plan
+
+**Instantánea histórica previa a la instalación del toolchain y a los builds V1.** Las filas de abajo registran el estado al redactarse esta revisión; expresiones como “APK todavía no generada” o “pruebas pendientes” ya no describen el estado actual. La evidencia vigente está en `docs/ENTORNO_Y_VERSIONES.md` y `docs/INFORME_IMPLEMENTACION_V1.md`.
 
 | Paso o puerta | Trabajo realizado | Verificación pendiente o límite |
 |---|---|---|
@@ -835,4 +839,4 @@ Esta tabla registra el estado inicial de la planificación y no el estado vigent
 | Pasos 9 y 10, servicio real | No iniciados | Requieren clave introducida directamente en la app, saldo suficiente y autorización concreta de hasta dos GET con criterios visibles |
 | Precio total | La interfaz evita sumar precios y marca el total como no verificado | Requiere comparar una respuesta real sanitizada antes de cambiar la etiqueta |
 
-Estado detallado: [entorno y versiones](docs/ENTORNO_Y_VERSIONES.md), [informe de pruebas](docs/INFORME_PRUEBAS_POC.md) y [semántica del precio](docs/SEMANTICA_PRECIO_SERPAPI.md). La clave de SerpApi nunca debe pegarse en este documento, el código, la consola o el chat; se introduce directamente en la app instalada.
+El estado vigente de la aplicación se documenta en [entorno y versiones](docs/ENTORNO_Y_VERSIONES.md) e [informe V1](docs/INFORME_IMPLEMENTACION_V1.md); el [informe PoC](docs/INFORME_PRUEBAS_POC.md) y este plan son históricos. La clave de SerpApi nunca debe pegarse en este documento, el código, la consola o el chat; se introduce directamente en la app instalada.

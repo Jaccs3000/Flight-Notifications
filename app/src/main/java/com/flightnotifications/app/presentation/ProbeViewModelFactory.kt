@@ -15,6 +15,9 @@ class ProbeViewModelFactory(private val container: AppContainer) : ViewModelProv
             credentialStore = container.credentialStore,
             preferencesRepository = container.preferencesRepository,
             executionMutex = container.executionMutex,
+            accountDiagnosticLog = container.accountDiagnosticLog,
+            flightDiagnosticLog = container.flightDiagnosticLog,
+            budgetSnapshots = container.localBudgetRepository.snapshots,
         ) as T
     }
 }

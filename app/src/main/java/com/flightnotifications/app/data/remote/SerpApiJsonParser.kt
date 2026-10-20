@@ -124,12 +124,14 @@ class SerpApiJsonParser {
     private fun JsonObject.stringAt(key: String): String? = (this[key] as? JsonPrimitive)
         ?.takeIf { it.isString }
         ?.content
-    private fun JsonElement?.asIntegralLongOrNull(): Long? = try {
-        val primitive = this as? JsonPrimitive ?: return null
-        val amount = BigDecimal(primitive.content)
-        if (amount <= BigDecimal.ZERO || amount.stripTrailingZeros().scale() > 0) null else amount.longValueExact()
-    } catch (_: Exception) {
-        null
+    private fun JsonElement?.asIntegralLongOrNull(): Long? {
+        return try {
+            val primitive = this as? JsonPrimitive ?: return null
+            val amount = BigDecimal(primitive.content)
+            if (amount <= BigDecimal.ZERO || amount.stripTrailingZeros().scale() > 0) null else amount.longValueExact()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private companion object {

@@ -56,7 +56,9 @@ class RetrofitSerpApiClient(
     }
 }
 
-private fun serpApiJsonConverter() = Json {
+private val serpApiJson = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
-}.asConverterFactory("application/json".toMediaType())
+}
+
+private fun serpApiJsonConverter() = serpApiJson.asConverterFactory("application/json".toMediaType())

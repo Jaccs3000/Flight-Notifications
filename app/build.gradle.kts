@@ -9,12 +9,28 @@ android {
     namespace = "com.flightnotifications.app"
     compileSdk = 37
 
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+
+    val releaseStore = providers.environmentVariable("FLIGHT_RELEASE_STORE_FILE").orNull
+    if (releaseStore != null) {
+        signingConfigs {
+            create("privateRelease") {
+                storeFile = file(releaseStore)
+                storePassword = providers.environmentVariable("FLIGHT_RELEASE_STORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("FLIGHT_RELEASE_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("FLIGHT_RELEASE_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.flightnotifications.app"
         minSdk = 33
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 6
+        versionName = "1.0.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -25,6 +41,8 @@ android {
         }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            if (releaseStore != null) signingConfig = signingConfigs.getByName("privateRelease")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -67,6 +85,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.work.runtime)
     ksp(libs.androidx.room.compiler)
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.serialization)
@@ -80,6 +99,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.work.testing)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
