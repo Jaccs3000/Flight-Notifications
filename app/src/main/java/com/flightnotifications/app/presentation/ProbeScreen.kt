@@ -1,6 +1,6 @@
 package com.flightnotifications.app.presentation
 
-import android.app.DatePickerDialog
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -8,9 +8,11 @@ import android.content.Intent
 import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
+import android.view.WindowInsetsController
 import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -30,12 +35,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -44,12 +47,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +73,8 @@ import com.flightnotifications.app.domain.model.AccountSnapshot
 import com.flightnotifications.app.domain.model.FlightOption
 import com.flightnotifications.app.domain.model.ProbeOutcome
 import com.flightnotifications.app.domain.model.SearchCriteria
+import com.flightnotifications.app.domain.validation.ColombianAirportCatalog
+import com.flightnotifications.app.ui.theme.FlightAppColors
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -83,6 +92,7 @@ private val AppPage.isPrimary: Boolean
 fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewModel? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val activity = context as? Activity
     var pendingDelete by remember { mutableStateOf(false) }
     var page by remember { mutableStateOf(AppPage.ALERTS) }
     var returnPage by remember { mutableStateOf(AppPage.ALERTS) }
@@ -105,6 +115,19 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
         value
     }
 
+    SideEffect {
+        activity?.window?.let { window ->
+            window.statusBarColor = FlightAppColors.flightBlue.toArgb()
+            window.navigationBarColor = (if (page.isPrimary) Color.White else FlightAppColors.flightBlueDark).toArgb()
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+            window.decorView.windowInsetsController?.setSystemBarsAppearance(
+                if (page.isPrimary) WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS else 0,
+                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+            )
+        }
+    }
+
     fun openSubpage(next: AppPage) {
         returnPage = page.takeIf { it.isPrimary } ?: returnPage
         page = next
@@ -117,64 +140,56 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
     BackHandler(enabled = !page.isPrimary) { goBack() }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        floatingActionButton = {
-            if (page == AppPage.ALERTS && alertsViewModel != null) {
-                ExtendedFloatingActionButton(
-                    onClick = { editorAlertId = null; openSubpage(AppPage.EDITOR) },
-                    icon = { Text("＋") },
-                    text = { Text("Nueva alerta") },
-                    modifier = Modifier.testTag("new-alert").primaryButtonTarget(),
-                )
-            }
-        },
+        modifier = Modifier.background(Brush.verticalGradient(listOf(FlightAppColors.flightBlue, FlightAppColors.flightBlueDark))),
+        containerColor = Color.Transparent,
         bottomBar = {
             if (page.isPrimary) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    listOf(
-                        Triple(AppPage.ALERTS, "✈", "Alertas"),
-                        Triple(AppPage.ACTIVITY, "◷", "Actividad"),
-                        Triple(AppPage.SETTINGS, "⚙", "Ajustes"),
-                    ).forEach { (destination, icon, label) ->
-                        NavigationBarItem(
-                            selected = page == destination,
-                            onClick = { page = destination },
-                            icon = { Text(icon, style = MaterialTheme.typography.titleMedium) },
-                            label = { Text(label) },
-                            alwaysShowLabel = true,
-                        )
-                    }
-                }
+                FlightBottomNavigation(
+                    selected = when (page) {
+                        AppPage.ACTIVITY -> MainTab.ACTIVITY
+                        AppPage.SETTINGS -> MainTab.SETTINGS
+                        else -> MainTab.ALERTS
+                    },
+                    onSelect = { tab ->
+                        page = when (tab) {
+                            MainTab.ALERTS -> AppPage.ALERTS
+                            MainTab.ACTIVITY -> AppPage.ACTIVITY
+                            MainTab.SETTINGS -> AppPage.SETTINGS
+                        }
+                    },
+                )
             }
         },
     ) { insets ->
         when (page) {
             AppPage.ALERTS -> Column(
-                modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp).padding(bottom = 84.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = 84.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (alertsViewModel != null) {
                     FlightAlertsSection(
                         viewModel = alertsViewModel,
                         maximumLocalGets = state.localBudgetLimit,
+                        onCreateAlert = { editorAlertId = null; openSubpage(AppPage.EDITOR) },
                         onEditAlert = { id -> editorAlertId = id; openSubpage(AppPage.EDITOR) },
                         onOpenDetail = { id -> selectedAlertId = id; openSubpage(AppPage.DETAIL) },
                     )
                 } else EmptyAppCard("No se pudo cargar el administrador de alertas.")
             }
             AppPage.ACTIVITY -> Column(
-                modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 ActivityScreen(
                     state = alertsState,
+                    airportCatalog = alertsViewModel?.airportCatalog,
                     onClear = { alertsViewModel?.requestClearNotifications() },
                     onOpenAlert = { id -> selectedAlertId = id; openSubpage(AppPage.DETAIL) },
                 )
             }
             AppPage.SETTINGS -> Column(
-                modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 SettingsScreen(
                     state = state,
@@ -286,7 +301,7 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
             title = { Text("Aerolíneas nacionales · ${alertsViewModel.airlineCatalog.reviewedAt}") },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    alertsViewModel.airlineCatalog.airlines.forEach { Text("• ${it.name} (${it.code})") }
+                    alertsViewModel.airlineCatalog.airlines.forEach { AirlineIdentity("${it.name} (${it.code})", Modifier.fillMaxWidth(), compact = true) }
                     Text(alertsViewModel.airlineCatalog.source, style = MaterialTheme.typography.bodySmall)
                     Text("Catálogo informativo, no exhaustivo. No filtra la búsqueda ni garantiza tarifas o cobertura.", style = MaterialTheme.typography.bodySmall)
                 }
@@ -297,43 +312,107 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
 }
 
 @Composable
-private fun ActivityScreen(state: FlightAlertsUiState, onClear: () -> Unit, onOpenAlert: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+private fun ActivityScreen(
+    state: FlightAlertsUiState,
+    airportCatalog: ColombianAirportCatalog?,
+    onClear: () -> Unit,
+    onOpenAlert: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Actividad", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Avisos enviados", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+            Text("Actividad", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+            Surface(
+                modifier = Modifier.clickable(enabled = state.notifications.isNotEmpty(), onClick = onClear).secondaryButtonTarget(),
+                color = Color.White.copy(alpha = 0.14f),
+                shape = CircleShape,
+            ) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppIcon(AppIcon.Delete, null, tint = Color.White)
+                    Text("Limpiar", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
             }
-            TextButton(onClick = onClear, enabled = state.notifications.isNotEmpty(), modifier = Modifier.secondaryButtonTarget()) { Text("Limpiar") }
         }
-        Text("La tarifa más baja de cada revisión. La misma tarifa puede aparecer en revisiones distintas.", style = MaterialTheme.typography.bodyMedium)
         if (state.notifications.isEmpty()) {
-            EmptyAppCard("Aún no se han enviado avisos. Cuando una revisión encuentre una tarifa elegible, aparecerá aquí.")
+            EmptyAppCard("Todavía no hay avisos. Cuando una revisión encuentre una tarifa que cumpla tu máximo, aparecerá aquí.")
         } else {
-            state.notifications.forEach { notice ->
-                val alert = state.alerts.firstOrNull { it.alert.id == notice.alertId }?.alert
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = { onOpenAlert(notice.alertId) }),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.small) {
-                            Text("✓  Tarifa verificada", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelLarge)
-                        }
-                        Text(notice.routeSummary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        Text(alert?.let { "${formatTripDates(it.outboundDate, it.returnDate)} · 1 adulto" } ?: "1 adulto", color = MaterialTheme.colorScheme.secondary)
-                        Text(formatCop(notice.priceCop), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text("COP · ida y vuelta", color = MaterialTheme.colorScheme.secondary)
-                        HorizontalDivider()
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                            Text("${notice.outboundCarrier} / ${notice.returnCarrier}", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.weight(1f))
-                            Text(formatShortTime(notice.sentAt), color = MaterialTheme.colorScheme.secondary)
-                            Text("  ›", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
-                        }
+            val zone = ZoneId.of("America/Bogota")
+            val grouped = state.notifications
+                .sortedByDescending { it.sentAt }
+                .groupBy { Instant.ofEpochMilli(it.sentAt).atZone(zone).toLocalDate() }
+            val today = LocalDate.now(zone)
+            grouped.forEach { (day, notices) ->
+                Text(activityDayLabel(day, today), style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                notices.forEach { notice ->
+                    val alert = state.alerts.firstOrNull { it.alert.id == notice.alertId }?.alert
+                    val origin = alert?.originIata?.let { airportCatalog?.find(it) }
+                    val destination = alert?.destinationIata?.let { airportCatalog?.find(it) }
+                    ActivityNoticeCard(
+                        route = notice.routeSummary,
+                        originCity = origin?.city,
+                        originAirport = origin?.let(::airportShortName),
+                        destinationCity = destination?.city,
+                        destinationAirport = destination?.let(::airportShortName),
+                        dates = alert?.let { "${formatTripDates(it.outboundDate, it.returnDate)} · 1 adulto" } ?: "1 adulto",
+                        price = notice.priceCop,
+                        carriers = "${notice.outboundCarrier} / ${notice.returnCarrier}",
+                        sentAt = notice.sentAt,
+                        onClick = { onOpenAlert(notice.alertId) },
+                    )
+                }
+            }
+            Text("Hasta 100 avisos locales. Limpiar cierra también las notificaciones visibles del sistema.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.78f))
+        }
+    }
+}
+
+@Composable
+private fun ActivityNoticeCard(
+    route: String,
+    originCity: String?,
+    originAirport: String?,
+    destinationCity: String?,
+    destinationAirport: String?,
+    dates: String,
+    price: Long,
+    carriers: String,
+    sentAt: Long,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = CircleShape) {
+                Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppIcon(AppIcon.Verified, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
+                    Text("Verificada", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
-            Text("Hasta 100 avisos locales. Limpiar cierra también las notificaciones visibles del sistema.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            Text(
+                if (originCity != null && destinationCity != null) "$originCity   ↔   $destinationCity" else route,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            if (originAirport != null || destinationAirport != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(originAirport.orEmpty(), Modifier.weight(1f), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(destinationAirport.orEmpty(), Modifier.weight(1f), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            Text(dates, color = MaterialTheme.colorScheme.secondary)
+            Text(formatCop(price), style = MaterialTheme.typography.headlineMedium, color = FlightAppColors.tealDark, fontWeight = FontWeight.Bold)
+            Text("COP · ida y vuelta", color = MaterialTheme.colorScheme.secondary)
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                AirlineIdentity(carriers, Modifier.weight(1f), compact = true)
+                Text(formatShortTime(sentAt), color = MaterialTheme.colorScheme.secondary)
+                AppIcon(AppIcon.ChevronRight, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.secondary)
+            }
         }
     }
 }
@@ -353,8 +432,10 @@ private fun SettingsScreen(
     onOpenNotificationSettings: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Ajustes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("SerpApi", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.fillMaxWidth().height(72.dp)) {
+            FlightSkyDecoration(Modifier.fillMaxSize())
+            Text("Ajustes", modifier = Modifier.align(Alignment.CenterStart), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+        }
         CredentialCard(
             configured = state.credentialConfigured,
             busy = credentialBusy,
@@ -364,7 +445,6 @@ private fun SettingsScreen(
             onDelete = onDeleteCredential,
             onCheckAccount = onCheckAccount,
         )
-        Text("Consultas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         LocalBudgetCard(
             maximum = state.localBudgetLimit,
             used = state.budget?.usedInWindow ?: 0,
@@ -373,35 +453,45 @@ private fun SettingsScreen(
             officialAvailable = state.account?.conservativeSearchesLeft,
             accountCheckedAt = state.account?.checkedAt?.toEpochMilli(),
         )
-        Text("El límite local es independiente del saldo de SerpApi.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column {
-                SettingsRow("♧", "Notificaciones", if (notificationsAllowed) "Permitidas" else "Desactivadas", onOpenNotificationSettings, success = notificationsAllowed)
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                SettingsRow("⌁", "Diagnóstico", "Pruebas y registros", onOpenDiagnostic)
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                SettingsRow("▤", "Catálogo de aerolíneas", null, onOpenCatalog)
+                SketchSectionHeader("Herramientas y opciones", AppIcon.Settings)
+                Column(Modifier.padding(horizontal = 14.dp)) {
+                    SettingsRow(AppIcon.Notifications, "Notificaciones", if (notificationsAllowed) "Activadas en este dispositivo" else "Desactivadas en Android", onOpenNotificationSettings, success = notificationsAllowed)
+                    HorizontalDivider(Modifier.padding(horizontal = 8.dp))
+                    SettingsRow(AppIcon.Info, "Diagnóstico", "Programación, pruebas y registros", onOpenDiagnostic)
+                    HorizontalDivider(Modifier.padding(horizontal = 8.dp))
+                    SettingsRow(AppIcon.Flight, "Aerolíneas compatibles", "Catálogo informativo", onOpenCatalog)
+                }
             }
         }
-        Text("Alertas de vuelos · versión 1.0.6", modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("Alertas de vuelos · versión 1.0.14", modifier = Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         state.errorMessage?.let { ErrorCard(it) }
         if (alertsViewModel == null) Text("No se pudo cargar el estado de alertas.", color = MaterialTheme.colorScheme.error)
     }
 }
 
 @Composable
-private fun SettingsRow(icon: String, title: String, subtitle: String?, onClick: () -> Unit, success: Boolean = false) {
+private fun SettingsRow(icon: AppIcon, title: String, subtitle: String?, onClick: () -> Unit, success: Boolean = false) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(icon, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.titleLarge, modifier = Modifier.size(28.dp))
+        Surface(color = if (success) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.size(42.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                AppIcon(icon, null, modifier = Modifier.size(22.dp), tint = if (success) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary)
+            }
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             if (subtitle != null) Text(subtitle, color = if (success) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium)
         }
-        Text("›", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.headlineSmall)
+        AppIcon(AppIcon.ChevronRight, null, tint = MaterialTheme.colorScheme.secondary)
     }
 }
 
@@ -426,36 +516,54 @@ private fun DiagnosticScreen(
     var showFlightLog by remember { mutableStateOf(false) }
     Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            TextButton(onClick = onBack, modifier = Modifier.secondaryButtonTarget()) { Text("‹") }
+            BackIconButton(onBack)
             Column {
-                Text("Diagnóstico", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Revisa el funcionamiento de la app.", color = MaterialTheme.colorScheme.secondary)
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Text("Programación automática", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(if (schedulingStatus.contains("Enqueued", true) || schedulingStatus.contains("program", true)) "● Programada" else "● Estado", color = MaterialTheme.colorScheme.tertiary)
-                }
-                Text(schedulingStatus, color = MaterialTheme.colorScheme.secondary)
-                HorizontalDivider()
-                Text("Android puede aplazar las revisiones por batería, Doze, conectividad o detención forzosa.", color = MaterialTheme.colorScheme.secondary)
-                OutlinedButton(onClick = onCheckSchedule, modifier = Modifier.fillMaxWidth().primaryButtonTarget()) { Text("Comprobar programación") }
-                Text("No consume consultas de vuelos.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Text("Diagnóstico", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("Estado del sistema y registros", color = Color.White.copy(alpha = 0.82f))
             }
         }
         Card(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { showFlightProbe = !showFlightProbe },
+            shape = MaterialTheme.shapes.large,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        Text("Prueba manual de vuelos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("CTG ↔ CLO · Fechas y vuelos directos", color = MaterialTheme.colorScheme.secondary)
+                    Text("Programación automática", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    val scheduled = schedulingStatus.contains("Enqueued", true) || schedulingStatus.contains("program", true)
+                    Surface(color = if (scheduled) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.small) {
+                        Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            AppIcon(if (scheduled) AppIcon.Verified else AppIcon.Clock, null, modifier = Modifier.size(16.dp), tint = if (scheduled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary)
+                            Text(if (scheduled) "Programada" else "Estado", color = if (scheduled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
-                    Text(if (showFlightProbe) "⌃" else "⌄", color = MaterialTheme.colorScheme.secondary)
+                }
+                Text(schedulingStatus, color = MaterialTheme.colorScheme.secondary)
+                HorizontalDivider()
+                Text("Android puede aplazar las revisiones por batería, Doze, conectividad o detención forzosa.", color = MaterialTheme.colorScheme.secondary)
+                OutlinedButton(onClick = onCheckSchedule, modifier = Modifier.fillMaxWidth().primaryButtonTarget()) {
+                    AppIcon(AppIcon.Calendar, null)
+                    Text("Comprobar programación")
+                }
+                Text("No consume consultas de vuelos.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            shape = MaterialTheme.shapes.large,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { showFlightProbe = !showFlightProbe }) {
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Flight, null, tint = MaterialTheme.colorScheme.primary) }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba manual de vuelos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("CTG ↔ CLO · fechas y vuelos directos", color = MaterialTheme.colorScheme.secondary)
+                    }
+                    AppIcon(if (showFlightProbe) AppIcon.ExpandLess else AppIcon.ExpandMore, null, tint = MaterialTheme.colorScheme.secondary)
                 }
                 if (showFlightProbe) {
                     SearchCard(state, onOutboundDate, onReturnDate, onDirectOnly, onStartProbe, onCancelProbe)
@@ -464,10 +572,22 @@ private fun DiagnosticScreen(
                 }
             }
         }
-        Text("Registro", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text("Registro", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = !showFlightLog, onClick = { showFlightLog = false }, label = { Text("Conexión") }, modifier = Modifier.chipTarget())
-            FilterChip(selected = showFlightLog, onClick = { showFlightLog = true }, label = { Text("Vuelos") }, modifier = Modifier.chipTarget())
+            FilterChip(
+                selected = !showFlightLog,
+                onClick = { showFlightLog = false },
+                label = { Text("Conexión") },
+                modifier = Modifier.chipTarget(),
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer, selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer),
+            )
+            FilterChip(
+                selected = showFlightLog,
+                onClick = { showFlightLog = true },
+                label = { Text("Vuelos") },
+                modifier = Modifier.chipTarget(),
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer, selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer),
+            )
         }
         DiagnosticLogCard(
             title = if (showFlightLog) "Registro de búsqueda de vuelos" else "Registro de conexión",
@@ -476,14 +596,21 @@ private fun DiagnosticScreen(
             onClear = if (showFlightLog) onClearFlightLog else onClearAccountLog,
             onCopy = if (showFlightLog) onCopyFlightLog else onCopyAccountLog,
         )
-        Text("Los registros no contienen API keys, tokens ni cuerpos JSON. Las pruebas manuales de vuelos pueden consumir cuota.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+        Text("Los registros no contienen API keys, tokens ni cuerpos JSON. Las pruebas manuales de vuelos pueden consumir cuota.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.82f))
     }
 }
 
 @Composable
 private fun EmptyAppCard(message: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Text(message, modifier = Modifier.fillMaxWidth().padding(20.dp), color = MaterialTheme.colorScheme.secondary)
+    Card(
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppIcon(AppIcon.Info, null, tint = MaterialTheme.colorScheme.primary)
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -498,6 +625,14 @@ private fun formatTripDates(outbound: String, returning: String): String {
 private fun formatShortTime(epochMillis: Long): String = DateTimeFormatter.ofPattern("HH:mm")
     .withZone(ZoneId.of("America/Bogota")).format(Instant.ofEpochMilli(epochMillis))
 
+private fun activityDayLabel(day: LocalDate, today: LocalDate): String = when (day) {
+    today -> "Hoy"
+    today.minusDays(1) -> "Ayer"
+    else -> DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("es-CO"))
+        .format(day)
+        .replaceFirstChar { it.titlecase(Locale.forLanguageTag("es-CO")) }
+}
+
 @Composable
 private fun DiagnosticLogCard(
     title: String,
@@ -506,7 +641,12 @@ private fun DiagnosticLogCard(
     onClear: () -> Unit,
     onCopy: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
@@ -523,8 +663,14 @@ private fun DiagnosticLogCard(
                 maxLines = 12,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCopy, enabled = logText.isNotBlank(), modifier = Modifier.primaryButtonTarget()) { Text("Copiar") }
-                OutlinedButton(onClick = onClear, enabled = logText.isNotBlank(), modifier = Modifier.primaryButtonTarget()) { Text("Limpiar") }
+                OutlinedButton(onClick = onCopy, enabled = logText.isNotBlank(), modifier = Modifier.weight(1f).primaryButtonTarget()) {
+                    AppIcon(AppIcon.Copy, null)
+                    Text("Copiar")
+                }
+                OutlinedButton(onClick = onClear, enabled = logText.isNotBlank(), modifier = Modifier.weight(1f).primaryButtonTarget()) {
+                    AppIcon(AppIcon.Delete, null, tint = MaterialTheme.colorScheme.error)
+                    Text("Limpiar")
+                }
             }
         }
     }
@@ -542,44 +688,75 @@ private fun CredentialCard(
 ) {
     var apiKeyInput by remember { mutableStateOf("") }
     var editing by remember(configured) { mutableStateOf(!configured) }
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("♢", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(if (configured) "Clave guardada" else "Clave de SerpApi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(if (configured) "Protegida en este dispositivo" else "Guárdala cifrada para conectar la app", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (configured) TextButton(onClick = { editing = !editing }, modifier = Modifier.secondaryButtonTarget()) { Text(if (editing) "Cerrar" else "Cambiar") }
-            }
-            HorizontalDivider()
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(if (accountActive) "✓" else "○", style = MaterialTheme.typography.headlineSmall, color = if (accountActive) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(if (accountActive) "Cuenta activa" else if (configured) "Cuenta sin comprobar" else "Cuenta no conectada", color = if (accountActive) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                    Text(accountMessage ?: if (accountActive) "Saldo consultado con SerpApi." else "Comprueba el estado de la cuenta antes de buscar.", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = onCheckAccount, enabled = configured && !busy, modifier = Modifier.padding(top = 5.dp).primaryButtonTarget()) { Text("Probar conexión") }
-                }
-            }
-            if (editing) {
-                OutlinedTextField(
-                    value = apiKeyInput,
-                    onValueChange = { apiKeyInput = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Clave privada") },
-                    placeholder = { Text(if (configured) "Escribe una clave nueva para sustituirla" else "Ingresa la clave en este dispositivo") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    singleLine = true,
-                    enabled = !busy,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { onSave(apiKeyInput); apiKeyInput = "" }, enabled = !busy && apiKeyInput.isNotBlank(), modifier = Modifier.primaryButtonTarget()) {
-                        Text(if (configured) "Guardar cambios" else "Guardar cifrada")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.7f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+    ) {
+        Column {
+            SketchSectionHeader("Cuenta y conexión", AppIcon.Shield)
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                Surface(
+                    color = if (accountActive) Color(0xFFEAF7F1) else FlightAppColors.paleYellow,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(color = if (accountActive) Color(0xFF17976F) else Color(0xFFE5A83E), shape = CircleShape, modifier = Modifier.size(34.dp)) {
+                            Box(contentAlignment = Alignment.Center) { AppIcon(if (accountActive) AppIcon.Verified else AppIcon.Info, null, modifier = Modifier.size(20.dp), tint = Color.White) }
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(if (accountActive) "Cuenta activa" else if (configured) "Cuenta sin comprobar" else "Cuenta no conectada", color = if (accountActive) Color(0xFF157552) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text(accountMessage ?: if (accountActive) "Cuenta comprobada. Account API no consume búsquedas de vuelos." else "Comprueba el estado de la cuenta antes de buscar.", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
-                    if (configured) TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.secondaryButtonTarget()) { Text("Eliminar clave") }
                 }
-                Text("La clave se cifra con Android Keystore y no se muestra después de guardarla.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = FlightAppColors.paleLavender, shape = MaterialTheme.shapes.medium, modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Key, "Clave protegida", tint = Color(0xFF7C48BF)) }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(if (configured) "Clave guardada" else "Clave de SerpApi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(if (configured) "Protegida en este dispositivo" else "Guárdala cifrada para conectar la app", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (configured) OutlinedButton(
+                        onClick = { editing = !editing },
+                        modifier = Modifier.secondaryButtonTarget(),
+                        shape = CircleShape,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FlightAppColors.teal.copy(alpha = 0.6f)),
+                    ) { Text(if (editing) "Cerrar" else "Cambiar", color = FlightAppColors.tealDark) }
+                }
+                if (configured) OutlinedButton(
+                    onClick = onCheckAccount,
+                    enabled = !busy,
+                    modifier = Modifier.align(Alignment.Start).primaryButtonTarget(),
+                    shape = CircleShape,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FlightAppColors.teal.copy(alpha = 0.55f)),
+                ) {
+                    AppIcon(AppIcon.Refresh, null, tint = FlightAppColors.tealDark)
+                    Text("Probar conexión", color = FlightAppColors.tealDark)
+                }
+                if (editing) {
+                    OutlinedTextField(
+                        value = apiKeyInput,
+                        onValueChange = { apiKeyInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Clave privada") },
+                        placeholder = { Text(if (configured) "Escribe una clave nueva para sustituirla" else "Ingresa la clave en este dispositivo") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        enabled = !busy,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { onSave(apiKeyInput); apiKeyInput = "" }, enabled = !busy && apiKeyInput.isNotBlank(), modifier = Modifier.primaryButtonTarget(), shape = CircleShape) {
+                            Text(if (configured) "Guardar cambios" else "Guardar cifrada")
+                        }
+                        if (configured) TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.secondaryButtonTarget()) { Text("Eliminar clave") }
+                    }
+                    Text("La clave se cifra con Android Keystore y no se muestra después de guardarla.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                }
             }
         }
     }
@@ -587,7 +764,12 @@ private fun CredentialCard(
 
 @Composable
 private fun AccountCard(account: AccountSnapshot, message: String?) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Estado de cuenta", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(message.orEmpty())
@@ -613,29 +795,26 @@ private fun SearchCard(
     val context = LocalContext.current
     val criteria = SearchCriteria(state.outboundDate, state.returnDate, state.directOnly)
     val dateError = criteria.validationError()
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Ensayo CTG ↔ CLO", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 DateButton("Ida", state.outboundDate, Modifier.weight(1f)) { current ->
-                    val picker = DatePickerDialog(context, { _, year, month, day ->
-                        val selected = LocalDate.of(year, month + 1, day)
+                    openDatePicker(context, current, LocalDate.now(SearchCriteria.COLOMBIA_ZONE)) { selected ->
                         onOutboundDate(selected)
                         val returnStart = if (state.returnDate.isAfter(selected)) state.returnDate else selected.plusDays(1)
                         Handler(Looper.getMainLooper()).post {
-                            val returnPicker = DatePickerDialog(context, { _, returnYear, returnMonth, returnDay -> onReturnDate(LocalDate.of(returnYear, returnMonth + 1, returnDay)) }, returnStart.year, returnStart.monthValue - 1, returnStart.dayOfMonth)
-                            returnPicker.datePicker.minDate = selected.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                            returnPicker.show()
+                            openDatePicker(context, returnStart, selected.plusDays(1), onReturnDate)
                         }
-                    }, current.year, current.monthValue - 1, current.dayOfMonth)
-                    picker.datePicker.minDate = LocalDate.now(SearchCriteria.COLOMBIA_ZONE)
-                        .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                    picker.show()
+                    }
                 }
-            DateButton("Regreso", state.returnDate, Modifier.weight(1f)) { current ->
-                    val picker = DatePickerDialog(context, { _, year, month, day -> onReturnDate(LocalDate.of(year, month + 1, day)) }, current.year, current.monthValue - 1, current.dayOfMonth)
-                    picker.datePicker.minDate = state.outboundDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                    picker.show()
+                DateButton("Regreso", state.returnDate, Modifier.weight(1f)) { current ->
+                    openDatePicker(context, current, state.outboundDate.plusDays(1), onReturnDate)
                 }
             }
             if (dateError != null) Text(dateError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -647,14 +826,23 @@ private fun SearchCard(
                 Switch(checked = state.directOnly, onCheckedChange = onDirectOnly, enabled = !state.isRunningProbe, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp))
             }
             HorizontalDivider()
-            Text("1 adulto · Económica · Ida y vuelta · COP · Aerolíneas: todas", style = MaterialTheme.typography.bodyMedium)
-            Text("No se envían filtros de compañías ni precio máximo.", style = MaterialTheme.typography.bodySmall)
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    AppIcon(AppIcon.Info, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("1 adulto · Económica · ida y vuelta", color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.bodyMedium)
+                        Text("Se consultan todas las aerolíneas. No se envían filtros de precio.", color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             state.budget?.let {
-                Text("Presupuesto local: ${it.usedInWindow}/${it.maximumRequests} GET · ${it.remainingInWindow} disponibles")
-                Text(
-                    "Ventana conservadora de 30 días; el tiempo con el teléfono apagado no adelanta el vencimiento del contador.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Presupuesto local de vuelos", style = MaterialTheme.typography.titleSmall)
+                        Text("${it.usedInWindow} de ${it.maximumRequests} consultas usadas · ${it.remainingInWindow} disponibles")
+                        Text("Ventana conservadora de 30 días; el teléfono apagado no adelanta el contador.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
                 if (!it.clockTrusted) {
                     Text(
                         "El reloj del dispositivo parece haber cambiado. Las consultas de vuelos permanecen bloqueadas hasta revisar y corregir la hora.",
@@ -668,7 +856,10 @@ private fun SearchCard(
                     onClick = onStart,
                     enabled = state.credentialConfigured && !state.isRunningProbe && !state.isCheckingAccount && dateError == null,
                     modifier = Modifier.weight(1f).primaryButtonTarget(),
-                ) { Text("Probar vuelo de ida y vuelta") }
+                ) {
+                    AppIcon(AppIcon.Flight, null, tint = MaterialTheme.colorScheme.onPrimary)
+                    Text("Buscar vuelos")
+                }
                 if (state.isRunningProbe) OutlinedButton(onClick = onCancel, modifier = Modifier.primaryButtonTarget()) { Text("Cancelar") }
             }
             if (state.isCheckingAccount || state.isRunningProbe) {
@@ -692,27 +883,59 @@ private fun LocalBudgetCard(
 ) {
     var draft by remember(maximum) { mutableStateOf(maximum.toString()) }
     var showEditor by remember { mutableStateOf(false) }
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Disponibles en SerpApi", style = MaterialTheme.typography.titleMedium)
-            Text(officialAvailable?.toString() ?: "—", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text(accountCheckedAt?.let { "Saldo consultado ${formatShortTime(it)}" } ?: "Comprueba la cuenta para consultar el saldo.", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("Presupuesto local", fontWeight = FontWeight.SemiBold)
-                Text("$used de $maximum")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.7f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+    ) {
+        Column {
+            SketchSectionHeader("Presupuesto de consultas", AppIcon.Calendar)
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(Modifier.weight(1f), color = FlightAppColors.paleBlue, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDCEBF5))) {
+                        Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Saldo de SerpApi", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                            Text(officialAvailable?.toString() ?: "—", style = MaterialTheme.typography.headlineLarge, color = FlightAppColors.tealDark, fontWeight = FontWeight.Bold)
+                            Text(accountCheckedAt?.let { "Consultado ${formatShortTime(it)}" } ?: "Saldo sin consultar", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Surface(Modifier.weight(1f), color = FlightAppColors.paleLavender, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE4DCF4))) {
+                        Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Consultas disponibles", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(remaining.toString(), style = MaterialTheme.typography.headlineLarge, color = Color(0xFF6042AD), fontWeight = FontWeight.Bold)
+                                Text("de $maximum", modifier = Modifier.padding(bottom = 5.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                            }
+                            Text("Límite de esta app", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("$used de $maximum consultas usadas", fontWeight = FontWeight.Bold)
+                    Surface(
+                        modifier = Modifier.clickable(onClick = { showEditor = true }).secondaryButtonTarget(),
+                        color = FlightAppColors.mintHeader,
+                        shape = CircleShape,
+                    ) {
+                        Text("Reducir", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = FlightAppColors.tealDark, fontWeight = FontWeight.Bold)
+                    }
+                }
+                LinearProgressIndicator(
+                    progress = { if (maximum <= 0) 0f else (used.toFloat() / maximum).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                    color = FlightAppColors.teal,
+                    trackColor = Color(0xFFDCE6EF),
+                )
+                Text("$remaining disponibles · ventana de 30 días", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                Surface(color = FlightAppColors.paleYellow, shape = MaterialTheme.shapes.medium) {
+                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppIcon(AppIcon.Info, null, modifier = Modifier.size(18.dp), tint = Color(0xFFE2A52F))
+                        Text("El saldo del proveedor y el límite local son independientes. Las reservas ya iniciadas se conservan.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF75602E))
+                    }
+                }
             }
-            LinearProgressIndicator(
-                progress = { if (maximum <= 0) 0f else (used.toFloat() / maximum).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.secondaryContainer,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("$remaining disponibles", color = MaterialTheme.colorScheme.secondary)
-                TextButton(onClick = { showEditor = true }, modifier = Modifier.secondaryButtonTarget()) { Text("Reducir límite") }
-            }
-            Text("Ventana local conservadora de 30 días. Las reservas ya iniciadas se conservan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         }
     }
     if (showEditor) AlertDialog(
@@ -734,9 +957,12 @@ private fun LocalBudgetCard(
 @Composable
 private fun DateButton(label: String, date: LocalDate, modifier: Modifier, onClick: (LocalDate) -> Unit) {
     OutlinedButton(onClick = { onClick(date) }, modifier = modifier.primaryButtonTarget()) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.labelSmall)
-            Text(date.toString(), style = MaterialTheme.typography.bodyMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppIcon(AppIcon.Calendar, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(horizontalAlignment = Alignment.Start) {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                Text(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO")).format(date), style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }
@@ -762,7 +988,7 @@ private fun OutcomeCard(outcome: ProbeOutcome) {
             }
             Text("Aerolíneas devueltas por la fuente (${outcome.airlinesDetected.size}):", fontWeight = FontWeight.SemiBold)
             if (outcome.airlinesDetected.isEmpty()) Text("No se recibieron nombres de operadores.")
-            outcome.airlinesDetected.forEach { airline -> Text("• $airline") }
+            outcome.airlinesDetected.forEach { airline -> AirlineIdentity(airline, Modifier.fillMaxWidth(), compact = true) }
             if (outcome.malformedOptions > 0) {
                 Text(
                     "Opciones no interpretadas: ${outcome.malformedOptions}. La lista de operadores no confirma cobertura de esas opciones.",
@@ -802,7 +1028,10 @@ private fun OptionDetails(title: String, option: FlightOption) {
 @Composable
 private fun ErrorCard(message: String) {
     Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
-        Text(message, modifier = Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            AppIcon(AppIcon.Info, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+        }
     }
 }
 

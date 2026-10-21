@@ -1,0 +1,199 @@
+GUÍA DE PANTALLAS Y FUNCIONAMIENTO
+Aplicación: Alertas de vuelos
+Versión de referencia del código: 1.0.15
+
+Este documento describe las pantallas disponibles en la aplicación, qué muestran y qué acciones puede realizar la persona usuaria. La app vigila tarifas de ida y vuelta para rutas nacionales colombianas. No vende tiquetes ni confirma una compra: muestra precios observados y permite abrir Google Flights para comprobar disponibilidad y condiciones.
+
+Para que las búsquedas funcionen se necesita conexión a Internet y una clave válida de SerpApi guardada en Ajustes. Las revisiones automáticas también dependen de que Android permita las notificaciones y la ejecución en segundo plano. Android puede aplazar una revisión por ahorro de batería, modo Doze, falta de conectividad o detención forzosa de la app.
+
+
+1. NAVEGACIÓN PRINCIPAL
+
+La barra inferior tiene tres secciones, cada una con icono de color propio: Alertas en turquesa, Actividad en azul y Ajustes en violeta. La sección abierta muestra su color con más fuerza y un fondo suave.
+
+- Alertas: crear, consultar, pausar, reactivar, editar o eliminar alertas.
+- Actividad: consultar avisos generados por las revisiones.
+- Ajustes: configurar la conexión, revisar el presupuesto y abrir herramientas de diagnóstico.
+
+Las pantallas secundarias tienen un botón redondo de regreso con flecha. Se accede a ellas desde las secciones principales y se vuelve a la sección desde la que se abrieron.
+
+
+2. PANTALLA «ALERTAS»
+
+Propósito
+Muestra las alertas guardadas y el estado de sus revisiones. Desde aquí se inicia una alerta nueva o se administran las existentes.
+
+Componentes y opciones
+
+- Encabezado «Mis alertas»: presenta el número de alertas activas y el total guardado.
+- Filtros compactos «Activas», «Inactivas» y «Todas», en ese orden. «Activas» aparece seleccionado inicialmente. Cada botón muestra solo el nombre a la izquierda y el contador a la derecha; no tiene iconos.
+  - Activas muestra las habilitadas cuya fecha de ida todavía no pasó.
+  - Inactivas incluye las deshabilitadas y las que ya vencieron.
+  - Todas muestra cada alerta guardada.
+- Cada filtro muestra un contador dinámico. Los botones bajos usan fondos pastel discretos y texto de color: verde para Activas, ámbar para Inactivas y azul para Todas. El botón circular «+» está en la parte superior, junto al encabezado.
+- Tarjeta de cada alerta: muestra el nombre asignado, el aeropuerto de ida y el de regreso con sus nombres completos, fechas, estado, precio verificado más reciente, aerolíneas, máximo permitido, frecuencia y hora de la última revisión.
+- Logos de aerolíneas: las iniciales se sustituyen por la imagen de la compañía. Los logos incluidos se muestran sin conexión en alertas, resultados, actividad y catálogo. Si la oferta combina compañías, se muestran sus logos; una compañía sin logo incluido se identifica con su nombre y un avión genérico.
+- Interruptor de estado: permite pausar o activar una alerta. Si Android no tiene permiso de notificaciones, la app solicita el permiso o abre los ajustes de notificaciones.
+- Menú de tres puntos: contiene «Editar alerta» y «Eliminar alerta».
+- Botón «Revisar»: inicia el flujo de revisión manual, después de mostrar una confirmación de consumo potencial de consultas.
+- Botón «Ver resultados»: abre el detalle de esa alerta.
+- Botón flotante circular «+»: abre el formulario para crear una alerta.
+- Avisos informativos: pueden advertir que las notificaciones están apagadas, que Android puede aplazar revisiones o que la frecuencia configurada podría superar el presupuesto local.
+
+La tarjeta puede mostrar «Verificado» cuando el precio corresponde a los criterios actuales. «Precio anterior» indica que el resultado guardado no fue confirmado con la configuración actual.
+
+Si todavía no hay alertas, la pantalla explica que se puede crear una para vigilar una ruta y unas fechas.
+
+
+3. PANTALLA «NUEVA ALERTA» / «EDITAR ALERTA»
+
+Propósito
+Define la ruta, fechas, precio máximo y programación de una alerta. Al guardar no se inicia una búsqueda inmediata.
+
+A. Ruta y fechas
+
+- Nombre: se genera automáticamente con las ciudades de origen y destino, por ejemplo, «Cartagena a Cali». No se escribe en este formulario.
+- Origen: campo de texto con autocompletado. Se puede escribir ciudad, nombre del aeropuerto, departamento o código IATA. Las sugerencias se filtran mientras se escribe y aparecen debajo del campo para no cubrir el teclado. Se selecciona una sugerencia de la lista; escribir texto sin escoger un aeropuerto no fija la ruta.
+- Destino: funciona igual que el origen. La app solo ofrece aeropuertos incluidos en su catálogo nacional local. La búsqueda ignora diferencias entre mayúsculas, minúsculas y tildes. Al enfocar el campo sin texto aparecen algunos aeropuertos frecuentes; al escribir se muestran hasta siete coincidencias.
+- Cuando se escoge un aeropuerto, queda representado en una tarjeta con ciudad, código IATA y nombre completo. El botón «×» limpia la selección; tocar la tarjeta permite buscar otro aeropuerto.
+- Cada sugerencia indica ciudad, código IATA y nombre del aeropuerto.
+- Ida: abre el selector de fecha. No permite escoger una fecha anterior a hoy en Colombia.
+- Regreso: abre el selector de fecha. Debe ser posterior a la fecha de ida.
+- Al escoger la fecha de ida, la app abre inmediatamente el selector de regreso; propone una fecha posterior y no permite regresar antes de la ida.
+- En una alerta nueva, la fecha inicial sugerida es aproximadamente 30 días desde hoy y el regreso sugerido tres días después. Se pueden cambiar.
+
+B. Precio y frecuencia
+
+- Máximo total: se escribe un valor entero en pesos colombianos. Mientras se escribe, se agrupan los miles con puntos; el campo presenta el símbolo «$» y la etiqueta «COP». No se escriben decimales.
+- El precio se compara con el total de ida y vuelta para un adulto en clase económica.
+- Hora de inicio: abre un selector de hora en formato de 24 horas. Define la hora de la primera revisión automática. Si esa hora ya pasó hoy, la primera ejecución queda programada para el día siguiente.
+- Frecuencia: se escoge una de estas opciones: cada 6, 8, 12 o 24 horas.
+- «Solo vuelos directos»: interruptor activado por defecto. Al apagarlo se permiten vuelos con escalas.
+- Estimación de consultas mensuales: informa un máximo estimado para las alertas activas; no es una promesa de ejecución exacta.
+- El formulario informa que se buscarán las aerolíneas que devuelva la fuente y que guardar no inicia una consulta.
+- «Guardar alerta activa» crea la alerta activa por defecto. En edición, «Guardar cambios» conserva el estado que ya tenía la alerta, de modo que una alerta pausada continúa pausada.
+- Botón de regreso: vuelve sin guardar los cambios pendientes.
+
+Los campos obligatorios y la ruta se validan antes de guardar. Se debe seleccionar un aeropuerto del catálogo tanto para origen como para destino.
+
+
+4. PANTALLA «DETALLE DE ALERTA» / «RESULTADOS»
+
+Propósito
+Explica la tarifa más baja observada y las demás combinaciones de ida y vuelta verificadas para la alerta.
+
+Componentes
+
+- Encabezado con el nombre de la alerta, botón de regreso y botón «Editar».
+- Resumen de fechas, cantidad de pasajeros y clase: un adulto, económica.
+- Tarjeta de tarifa más baja observada: total COP de ida y vuelta y estado de verificación. Indica si el total está dentro o supera el máximo de la alerta.
+- Resumen de vuelos de ida y regreso: aerolínea y si es directo o tiene escalas.
+- «Exploración parcial»: aparece cuando no se comprobaron todas las combinaciones posibles.
+- «Otras tarifas verificadas»: muestra otras combinaciones completas de ida y vuelta, aerolíneas y total observado.
+- «Ver información técnica» / «Ocultar información técnica»: despliega criterios usados, máximo aplicado entonces y máximo actual, estado, hora de respuesta, cantidad de opciones revisadas, ofertas verificadas y aerolíneas detectadas.
+- Las aerolíneas detectadas se distinguen de las que tienen una tarifa completa verificada. Que un nombre aparezca como detectado no significa que se haya confirmado una tarifa de esa aerolínea.
+- Catálogo informativo de aerolíneas: lista códigos y nombres de referencia. No filtra la búsqueda, no es exhaustivo y no garantiza disponibilidad.
+- «Abrir Google Flights»: abre el enlace de verificación si la consulta produjo uno.
+- «Revisar ahora»: solicita una revisión manual. Antes aparece una confirmación; si se continúa, la app comprueba la cuenta y puede iniciar hasta cuatro consultas de vuelos. Cancelar no inicia consultas de vuelos.
+
+Si aún no existe un resultado, la pantalla indica que todavía no hay una tarifa verificada. Un dato anterior puede conservarse para consulta, pero se marca como no confirmado si cambiaron los criterios de la alerta.
+
+
+5. PANTALLA «ACTIVIDAD»
+
+Propósito
+Conserva el historial local de avisos que produjo la app.
+
+Componentes y acciones
+
+- Encabezado «Actividad» y subtítulo «Historial de avisos».
+- Botón «Limpiar»: pide confirmación antes de vaciar la lista y cerrar las notificaciones visibles del sistema.
+- Los avisos aparecen agrupados por día (por ejemplo, «Hoy» o «Ayer»).
+- Cada tarjeta indica que la tarifa fue verificada, la ruta, las fechas, el total COP de ida y vuelta, las aerolíneas y la hora del aviso.
+- Al tocar una tarjeta se abre el detalle de la alerta asociada.
+- Se conservan hasta 100 avisos locales.
+- Si no hay avisos, la pantalla explica que aparecerán cuando una revisión encuentre una tarifa que cumpla el máximo configurado.
+
+Limpiar el historial no elimina las alertas guardadas. Una revisión futura puede volver a generar un aviso.
+
+
+6. PANTALLA «AJUSTES»
+
+Propósito
+Administra el acceso a SerpApi, muestra el presupuesto de consultas y da acceso a la configuración de notificaciones y diagnóstico.
+
+A. Cuenta y conexión
+
+- Clave de SerpApi: campo de texto privado. Se puede escribir o sustituir la clave. El contenido se oculta mientras se escribe.
+- «Guardar cifrada» / «Guardar cambios»: almacena la clave protegida con Android Keystore. La clave no vuelve a mostrarse después de guardar.
+- «Cambiar» y «Cerrar»: muestran u ocultan el campo de edición cuando ya hay una clave guardada.
+- «Probar conexión»: consulta la cuenta del proveedor y muestra su estado o el mensaje recibido. Requiere una clave guardada.
+- «Eliminar clave»: solicita confirmación y borra la clave de este dispositivo; también invalida el saldo y resultados mantenidos en memoria.
+
+B. Presupuesto de consultas
+
+- «Saldo de SerpApi»: muestra el saldo conocido, si se pudo consultar, y cuándo se comprobó.
+- «Límite de esta app»: indica consultas usadas y disponibles dentro de una ventana local conservadora de 30 días.
+- «Reducir»: permite escribir un nuevo límite entero. Solo permite bajarlo respecto al valor actual; no aumenta el presupuesto local.
+- El saldo del proveedor y el límite interno de la app son independientes. Las reservas ya iniciadas se conservan.
+
+C. Otras opciones
+
+- «Notificaciones»: abre la configuración de notificaciones de Android e informa si están activadas.
+- «Diagnóstico»: abre la pantalla técnica descrita en la sección siguiente.
+- «Aerolíneas compatibles»: abre el catálogo informativo de aerolíneas.
+- En la parte inferior se muestra el nombre y la versión de la app.
+
+
+7. PANTALLA «DIAGNÓSTICO»
+
+Propósito
+Permite revisar la programación automática, hacer pruebas manuales y leer o copiar los registros locales. Es una pantalla técnica.
+
+A. Programación automática
+
+- Muestra el estado que informa Android para el trabajo de revisiones.
+- «Comprobar programación» vuelve a consultar ese estado. Esta acción no consume consultas de vuelos.
+- Un aviso explica que batería, Doze, conectividad o detención forzosa pueden aplazar la ejecución.
+
+B. Prueba manual de vuelos CTG ↔ CLO
+
+- Sección expandible «Prueba manual de vuelos» para consultar Cartagena (CTG) y Cali (CLO).
+- «Ida» abre el selector de salida. Después de elegirla se solicita enseguida la fecha de regreso.
+- «Regreso» permite cambiar la fecha de vuelta; debe ser posterior a la ida.
+- «Solo vuelos directos» permite activar o permitir escalas.
+- La prueba usa un adulto, clase económica, ida y vuelta, y consulta todas las aerolíneas que entregue la fuente; no aplica filtro de precio.
+- «Buscar vuelos» muestra primero una confirmación de autorización. Al continuar, se comprueba la cuenta y, si hay cuota, se pueden iniciar hasta dos consultas de vuelos. Cancelar no inicia consultas de vuelos. La llamada de comprobación de cuenta se realiza antes de la tanda.
+- Mientras consulta, aparece el estado de progreso y se puede tocar «Cancelar».
+- Los errores y resultados se muestran debajo del formulario. La prueba puede consumir cuota del proveedor.
+
+C. Registro
+
+- Filtros «Conexión» y «Vuelos»: alternan entre el registro de la prueba de cuenta y el de búsqueda de vuelos.
+- El campo «Log de diagnóstico» es de solo lectura; no se puede escribir en él.
+- «Copiar» copia el registro al portapapeles del dispositivo.
+- «Limpiar» borra el registro seleccionado.
+- Los registros no incluyen la clave API, tokens ni el cuerpo completo de respuestas.
+
+
+8. DIÁLOGOS Y CONFIRMACIONES
+
+- Autorizar prueba de vuelos: resume ruta, fechas, criterio de vuelos directos/escalas y consumo potencial antes de una prueba desde Diagnóstico.
+- Revisar precios ahora: confirma la alerta y advierte que la revisión puede iniciar hasta cuatro GET de vuelos. Cancelar no inicia esas consultas.
+- Eliminar alerta: confirma el borrado de esa alerta, sus resultados y avisos asociados. No borra otras alertas, la clave ni el presupuesto global.
+- Limpiar avisos visibles: confirma que se vaciará el historial local y se cerrarán las notificaciones visibles del sistema.
+- Eliminar clave: confirma que se borrará la clave cifrada de este dispositivo.
+- Reducir presupuesto local: permite escribir el nuevo máximo numérico y ofrece «Guardar límite» o «Cancelar».
+- Catálogo de aerolíneas: lista nombres, códigos, fecha de revisión y fuente; se cierra con «Cerrar» o tocando fuera del diálogo.
+- Selector de fecha y selector de hora: son diálogos del sistema Android usados por el editor y por la prueba manual.
+- Sugerencias de aeropuerto: aparecen dentro del formulario debajo del campo; al escoger una, se cierra la lista y se oculta el teclado.
+
+
+9. CONSIDERACIONES DE USO
+
+- Una alerta nueva queda activa al guardarse. Puede pausarse desde su interruptor en «Alertas».
+- La hora configurada es la hora de inicio de la primera revisión; las siguientes se intentan según el intervalo escogido. Android puede aplazarlas, así que la hora real no siempre coincide exactamente.
+- Las búsquedas automáticas se suspenden si las notificaciones están desactivadas, para evitar consumir cuota sin poder avisar.
+- Una revisión manual no activa una alerta que esté pausada.
+- Las consultas usan fechas, ruta, clase, pasajeros y preferencia de escalas configurados. El catálogo de aerolíneas es solo orientativo: no restringe los resultados.
+- Los importes son precios observados. Antes de comprar hay que comprobar condiciones, equipaje, disponibilidad y precio final con el proveedor del vuelo.

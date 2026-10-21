@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         LowestNotifiedPriceEntity::class,
         InstallationMetadataEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class ProbeDatabase : RoomDatabase() {
@@ -54,6 +54,12 @@ abstract class ProbeDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `notification_outbox` (`fingerprint` TEXT NOT NULL, `alertId` TEXT NOT NULL, `itineraryIdentity` TEXT NOT NULL, `priceCop` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `routeSummary` TEXT NOT NULL, `outboundCarrier` TEXT NOT NULL, `returnCarrier` TEXT NOT NULL, `explorationLimited` INTEGER NOT NULL, `criteriaVersion` INTEGER NOT NULL, `notificationPolicyVersion` INTEGER NOT NULL, PRIMARY KEY(`fingerprint`), FOREIGN KEY(`alertId`) REFERENCES `flight_alerts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_outbox_alertId` ON `notification_outbox` (`alertId`)")
+            }
+        }
+
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `lastReviewCompletedAt` INTEGER")
             }
         }
     }

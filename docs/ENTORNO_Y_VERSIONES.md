@@ -1,8 +1,14 @@
 # Entorno y versiones
 
-## Entrega vigente: V1.0.6
+## Entrega vigente: V1.0.15
 
-La release actual está en `outputs/flight-notifications-1.0.6-release.apk`, paquete `com.flightnotifications.app`, `versionCode=8`, firmada con la clave RSA 3072 estable. `apksigner verify` confirmó firma v2 y el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`; `aapt` confirmó el paquete y la versión. Los hashes debug/release vigentes están en [SHA256SUMS.txt](../outputs/SHA256SUMS.txt). La compilación y `lintVitalRelease` finalizaron correctamente; no se ejecutaron pruebas automatizadas ni se instaló esta versión en teléfono. No se copió a Google Drive.
+La release actual está en `outputs/release-1.0.15/flight-notifications-1.0.15-release.apk`, paquete `com.flightnotifications.app`, `versionCode=17`, firmada con la clave RSA 3072 estable. `apksigner verify` confirmó firma v2 y el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`; `aapt` confirmó `versionName=1.0.15`. El APK pesa 3.433.570 bytes y su SHA-256 es `ffd403fc7de721253756150e776d767dd869faff22d41d740b775b4a06c242d3`. `assembleRelease` y `lintVitalRelease` finalizaron correctamente. Pasaron 2/2 pruebas instrumentadas de filtros y navegación inferior en Android API 36. Se instaló la release sobre la anterior y se comprobaron los filtros compactos y los tres destinos de la barra inferior. El APK está en `outputs/release-1.0.15/` y no se copió a Google Drive.
+
+Los filtros «Activas», «Inactivas» y «Todas» usan una sola fila compacta con el nombre a la izquierda y el contador a la derecha, sin iconos. Sus fondos son pasteles con bordes suaves para señalar selección. La barra inferior conserva iconos en turquesa, azul y violeta.
+
+## Evidencia histórica: V1.0.14
+
+La release V1.0.14 incluyó la primera versión con iconos coloreados en la navegación y filtros de estado. Su APK y firma se conservaron en `outputs/release-1.0.14/`.
 
 Entorno verificado el 19 de octubre de 2026 al generar V1 y revalidado durante la auditoría/build de V1.0.2.
 

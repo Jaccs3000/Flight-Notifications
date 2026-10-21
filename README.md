@@ -5,6 +5,8 @@ Aplicación privada para Android 13 o posterior que consulta SerpApi/Google Flig
 ## Funciones
 
 - Crear, editar, activar, pausar y eliminar varias alertas con aeropuerto IATA, fechas exactas, máximo total en COP y frecuencia de 6, 8, 12 o 24 horas.
+- Elegir la hora de inicio de la primera revisión automática y conservar la frecuencia elegida para las siguientes; Android puede aplazar el inicio por sus restricciones de ejecución.
+- Buscar aeropuertos con sugerencias en línea que se filtran mientras se escribe, introducir máximos con símbolo `$` y separadores de miles COP, y usar controles táctiles amplios.
 - Elegir vuelos directos (activado inicialmente) o permitir escalas. La ruta se valida contra el catálogo local de aeropuertos colombianos.
 - Revisar precios manualmente o mediante WorkManager. Android puede aplazar revisiones por batería, Doze, conectividad o detención forzada; las frecuencias son objetivos, no horarios garantizados.
 - Comprobar la cuenta antes de cada tanda, limitar GET de vuelos con un presupuesto local compartido y bloquear nuevas consultas cuando no se pueda confirmar la capacidad.
@@ -12,6 +14,8 @@ Aplicación privada para Android 13 o posterior que consulta SerpApi/Google Flig
 - En cada revisión verificada, enviar como máximo una notificación por alerta para la tarifa más baja que cumpla el máximo. Se puede volver a notificar el mismo itinerario y precio en revisiones posteriores.
 - Conservar registros de diagnóstico copiables para la cuenta y para vuelos. No contienen API key, tokens ni cuerpos JSON.
 - La app permite capturas de pantalla.
+- Las aerolíneas del catálogo y seis compañías adicionales muestran logos incluidos en el APK, incluso sin conexión. Las ofertas con varias compañías muestran sus logos; una compañía sin imagen incluida conserva su nombre y un icono de avión. Fuentes y recursos: [logos de aerolíneas](docs/LOGOS_AEROLINEAS.md).
+- La navegación inferior identifica Alertas en turquesa, Actividad en azul y Ajustes en violeta. Los filtros de alertas usan botones compactos de fondo pastel para Activas, Inactivas y Todas, con el texto a la izquierda y el contador a la derecha.
 
 La app consulta todas las aerolíneas que devuelve la fuente, también las que no estén en el catálogo informativo incluido. La cobertura de SerpApi/Google Flights no es universal. Los horarios de los segmentos se usan internamente para validar e identificar itinerarios; no se muestran como información de la oferta en la interfaz.
 
@@ -22,10 +26,10 @@ Entorno usado: Windows, JDK 21 para Gradle, bytecode Java 17, Android SDK API 37
 Desde PowerShell en la raíz del proyecto:
 
 ```powershell
-.\scripts\Build-Apk.ps1
+.\scripts\Build-Apk.ps1 -OutputDirectory 'outputs\release-1.0.15'
 ```
 
-El script ejecuta pruebas unitarias y Lint debug/release, compila ambos APK, firma release con la clave estable protegida fuera del proyecto y calcula SHA-256. Copia los binarios a `outputs\` y a `G:\Mi unidad\APK android car\`.
+El script ejecuta pruebas unitarias y Lint debug/release, compila ambos APK, firma release con la clave estable protegida fuera del proyecto y calcula SHA-256. El directorio indicado evita escribir la entrega en Google Drive.
 
 Pruebas instrumentadas con un emulador/dispositivo conectado:
 
@@ -36,7 +40,7 @@ Pruebas instrumentadas con un emulador/dispositivo conectado:
 
 ## Instalar y configurar
 
-1. Para uso habitual instala `flight-notifications-1.0.5-release.apk` en Android 13 o posterior. Autoriza a Android a instalar desde la aplicación con la que abras el archivo. El APK debug sirve para desarrollo y usa otro identificador de aplicación/datos.
+1. Para uso habitual instala `flight-notifications-1.0.15-release.apk` desde `outputs\release-1.0.15` en Android 13 o posterior. Autoriza a Android a instalar desde la aplicación con la que abras el archivo. El APK debug sirve para desarrollo y usa otro identificador de aplicación/datos.
 2. Abre **Configuración**, ingresa la API key de SerpApi en el teléfono y pulsa **Guardar cifrada**. La clave se almacena usando Android Keystore y no se debe compartir en chats, logs o archivos del proyecto.
 3. Pulsa **Probar conexión** para consultar `GET /account.json`. Esta comprobación no inicia GET de vuelos.
 4. La instalación nueva incluye una alerta de ejemplo CTG–CLO para marzo de 2027, pausada. Puedes editarla o borrarla; no vuelve a aparecer al volver a abrir la app.
@@ -47,9 +51,9 @@ Una tarifa se presenta como total observado sólo si los datos asociados de ida 
 
 ## Actualizaciones, firma y artefactos
 
-La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=7` y `versionName=1.0.5`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
+La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=17` y `versionName=1.0.15`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
 
-La release 1.0.5 firmada y su APK debug están en `outputs\release-1.0.5\`; también hay copias descargables y `SHA256SUMS.txt` en `outputs\`. Esta compilación se guardó localmente y no se copió a Google Drive.
+La release 1.0.15 firmada está en `outputs\release-1.0.15\`; esta entrega se guarda localmente y no se copia a Google Drive.
 
 ## Privacidad y alcance
 

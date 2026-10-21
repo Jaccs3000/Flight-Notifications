@@ -1,10 +1,10 @@
 <resources>
     <style name="Theme.FlightProbe" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#245D72</item>
-        <item name="android:statusBarColor">#F7F8FA</item>
-        <item name="android:navigationBarColor">#F7F8FA</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#008D91</item>
+        <item name="android:statusBarColor">#0753D7</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

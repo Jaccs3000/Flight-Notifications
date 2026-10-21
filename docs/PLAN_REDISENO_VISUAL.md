@@ -1,7 +1,19 @@
 # Plan para aplicar los bocetos a la aplicación Android
 
-Fecha: 20 de octubre de 2026. Estado: plan preparado; ejecución pendiente.
+Fecha: 20 de octubre de 2026. Estado: implementación aplicada en V1.0.9; falta la comprobación visual en emulador.
 Objetivo: reproducir las seis imágenes finales en composición, colores, tipografía, iconos, espaciados y comportamiento de los controles, usando los datos reales de la aplicación.
+
+## Estado de ejecución V1.0.9
+
+- Aplicados colores con contraste reforzado y estados visuales diferenciados para éxito, advertencia y error.
+- Unificados los iconos vectoriales, las tarjetas, las etiquetas de estado y los botones de acción en alertas, edición, detalle, actividad, ajustes y diagnóstico.
+- Reorganizadas las acciones de alertas para separar revisar, ver resultados, editar y eliminar; las acciones menos frecuentes quedan en un menú.
+- En resultados, separadas las aerolíneas detectadas de las tarifas verificadas y explicado cuándo una exploración parcial pudo dejar opciones sin revisar.
+- El autocompletado filtra dentro del formulario mientras se conserva el foco; el campo de máximo agrupa cifras COP sin decimales.
+- Añadidos un selector de hora inicial y controles para revisar cada 6, 8, 12 o 24 horas; la primera revisión usa la hora seleccionada y las siguientes parten del intento anterior.
+- Añadidos el prefijo `$` con el código COP, el botón flotante redondo con `+`, la flecha circular sólida de volver y nombres completos de aeropuertos en las alertas.
+- Aplicados colores e insignias de iniciales para identificar aerolíneas; reforzado el fondo y los estados seleccionados.
+- APK debug y release compilados; `lintVitalRelease` pasó. `apksigner` verificó la firma de release. No se ejecutaron pruebas automatizadas ni la comprobación visual en emulador.
 
 ## 1. Referencias y límites
 

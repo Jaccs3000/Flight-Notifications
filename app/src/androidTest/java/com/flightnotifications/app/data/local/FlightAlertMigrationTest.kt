@@ -30,11 +30,12 @@ class FlightAlertMigrationTest {
 
         helper.runMigrationsAndValidate(
             DATABASE_NAME,
-            4,
+            5,
             true,
             ProbeDatabase.MIGRATION_1_2,
             ProbeDatabase.MIGRATION_2_3,
             ProbeDatabase.MIGRATION_3_4,
+            ProbeDatabase.MIGRATION_4_5,
         ).use { database ->
             database.query("SELECT COUNT(*) FROM flight_request_reservations").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -49,9 +50,10 @@ class FlightAlertMigrationTest {
                 assertEquals(1, cursor.getInt(0))
             }
             database.query("PRAGMA table_info(flight_alerts)").use { cursor ->
-                var foundCriteriaVersion = false
-                while (cursor.moveToNext()) if (cursor.getString(1) == "criteriaVersion") foundCriteriaVersion = true
-                assertTrue(foundCriteriaVersion)
+                val columns = mutableSetOf<String>()
+                while (cursor.moveToNext()) columns += cursor.getString(1)
+                assertTrue(columns.contains("criteriaVersion"))
+                assertTrue(columns.contains("lastReviewCompletedAt"))
             }
             database.query("PRAGMA table_info(flight_alert_results)").use { cursor ->
                 val columns = mutableSetOf<String>()
@@ -69,7 +71,7 @@ class FlightAlertMigrationTest {
     }
 
     @Test
-    fun migrationV2ToV4PreservesLastResultAndCreatesNotificationOutbox() {
+    fun migrationV2ToV5PreservesLastResultAndCreatesNotificationOutbox() {
         helper.createDatabase(DATABASE_V2_NAME, 2).apply {
             execSQL(
                 "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt) " +
@@ -84,10 +86,11 @@ class FlightAlertMigrationTest {
 
         helper.runMigrationsAndValidate(
             DATABASE_V2_NAME,
-            4,
+            5,
             true,
             ProbeDatabase.MIGRATION_2_3,
             ProbeDatabase.MIGRATION_3_4,
+            ProbeDatabase.MIGRATION_4_5,
         ).use { database ->
             database.query("SELECT status, selectedOfferJson, verifiedOffersJson FROM flight_alert_results WHERE alertId = 'legacy-alert'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -105,8 +108,35 @@ class FlightAlertMigrationTest {
         }
     }
 
+    @Test
+    fun migrationV4ToV5AddsReviewTimestampWithoutLosingExistingAlertData() {
+        helper.createDatabase(DATABASE_V4_NAME, 4).apply {
+            execSQL(
+                "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt, lastAttemptAt) " +
+                    "VALUES ('legacy-v4-alert', 'Cartagena a Cali', 'CTG', 'CLO', '2027-03-25', '2027-03-28', 400000, 24, 1, 0, 100, 120, 110)",
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_V4_NAME,
+            5,
+            true,
+            ProbeDatabase.MIGRATION_4_5,
+        ).use { database ->
+            database.query("SELECT name, maxTotalCop, lastAttemptAt, lastReviewCompletedAt FROM flight_alerts WHERE id = 'legacy-v4-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Cartagena a Cali", cursor.getString(0))
+                assertEquals(400000, cursor.getInt(1))
+                assertEquals(110, cursor.getInt(2))
+                assertTrue(cursor.isNull(3))
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "flight_alert_migration_test.db"
         const val DATABASE_V2_NAME = "flight_alert_migration_v2_test.db"
+        const val DATABASE_V4_NAME = "flight_alert_migration_v4_test.db"
     }
 }

@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.Instant
 import java.time.ZoneId
 
 data class AlertInput(
@@ -27,6 +29,7 @@ data class AlertInput(
     val maximumCop: Long,
     val frequencyHours: Int,
     val directOnly: Boolean,
+    val startTime: LocalTime,
 )
 
 data class FlightAlertsUiState(
@@ -73,6 +76,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
             runCatching {
                 container.executionMutex.withLock {
                     val existing = input.id?.let { container.flightAlertRepository.find(it) }
+                    val requestedStartAt = nextScheduledStartMillis(input.startTime)
                     val candidate = if (existing == null) {
                         container.flightAlertRepository.newAlert(
                             name = input.name,
@@ -84,8 +88,12 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             frequency = input.frequencyHours,
                             direct = input.directOnly,
                             enabled = true,
-                        )
+                        ).copy(nextDueAt = requestedStartAt)
                     } else {
+                        val savedStartTime = existing.nextDueAt?.let {
+                            Instant.ofEpochMilli(it).atZone(COLOMBIA_ZONE).toLocalTime().withSecond(0).withNano(0)
+                        }
+                        val scheduleChanged = existing.frequencyHours != input.frequencyHours || savedStartTime != input.startTime
                         existing.copy(
                             name = input.name.trim(),
                             originIata = input.origin.trim().uppercase(),
@@ -95,6 +103,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             maxTotalCop = input.maximumCop,
                             frequencyHours = input.frequencyHours,
                             directOnly = input.directOnly,
+                            nextDueAt = if (scheduleChanged) requestedStartAt else existing.nextDueAt,
                             updatedAt = System.currentTimeMillis(),
                         )
                     }
@@ -303,6 +312,15 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
 
     companion object {
         val FREQUENCIES = FlightAlertInputValidator.ALLOWED_FREQUENCIES
-        private val COLOMBIA_ZONE = ZoneId.of("America/Bogota")
     }
+}
+
+private val COLOMBIA_ZONE = ZoneId.of("America/Bogota")
+
+private fun nextScheduledStartMillis(startTime: LocalTime, nowMillis: Long = System.currentTimeMillis()): Long {
+    val now = Instant.ofEpochMilli(nowMillis).atZone(COLOMBIA_ZONE)
+    val todayAtSelectedTime = now.toLocalDate().atTime(startTime).atZone(COLOMBIA_ZONE)
+    val sameMinute = now.toLocalTime().withSecond(0).withNano(0) == startTime
+    val next = if (todayAtSelectedTime.isBefore(now) && !sameMinute) todayAtSelectedTime.plusDays(1) else todayAtSelectedTime
+    return next.toInstant().toEpochMilli()
 }

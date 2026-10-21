@@ -59,8 +59,12 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
                 previous.directOnly != alert.directOnly
             )
         val maximumChanged = previous != null && previous.maxTotalCop != alert.maxTotalCop
-        val frequencyChanged = previous != null && previous.frequencyHours != alert.frequencyHours
-        val nextDueAt = if (alert.enabled && (routeChanged || maximumChanged || frequencyChanged)) System.currentTimeMillis() else alert.nextDueAt
+        val scheduleChanged = previous != null && previous.nextDueAt != alert.nextDueAt
+        val nextDueAt = when {
+            alert.enabled && scheduleChanged -> alert.nextDueAt
+            alert.enabled && (routeChanged || maximumChanged) -> System.currentTimeMillis()
+            else -> alert.nextDueAt
+        }
         val saved = alert.copy(
             criteriaVersion = (previous?.criteriaVersion ?: alert.criteriaVersion) + if (routeChanged) 1 else 0,
             notificationPolicyVersion = (previous?.notificationPolicyVersion ?: alert.notificationPolicyVersion) +
@@ -142,11 +146,9 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
     suspend fun setEnabled(id: String, enabled: Boolean) {
         val alert = dao.getAlert(id) ?: return
         val now = System.currentTimeMillis()
-        val frequencyMillis = alert.frequencyHours * 60L * 60L * 1000L
         val nextDue = when {
             !enabled -> null
-            alert.lastAutomaticAttemptAt != null -> maxOf(now, alert.lastAutomaticAttemptAt + frequencyMillis)
-            else -> now
+            else -> maxOf(now, alert.nextDueAt ?: now)
         }
         dao.setEnabled(id, enabled, now, nextDue)
     }

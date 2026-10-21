@@ -1,11 +1,85 @@
 # Informe de implementación y aceptación V1
 
-**Fecha:** 20 de octubre de 2026 (COT). Este informe conserva la evidencia histórica de V1.0.3 a V1.0.5 y añade el estado vigente de V1.0.6.  
+**Fecha:** 21 de octubre de 2026 (COT). Este informe conserva la evidencia histórica y añade el estado vigente de V1.0.15.
 **Proyecto:** `C:\Flight-Notifications-main`  
 **Especificación:** [REQUIREMENTS.md](../REQUIREMENTS.md) V1.4; [plan técnico](../PLAN_APP_DEFINITIVA.md) v1.2.  
-**Estado actual:** APK V1.0.6 debug y release generados localmente. La release usa `versionCode=8`, `versionName=1.0.6`, conserva el certificado estable y tiene firma v2 verificada. La compilación terminó correctamente; no se ejecutaron pruebas JVM ni instrumentadas para esta versión. La actualización y las comprobaciones de ejecución en segundo plano en el teléfono físico siguen pendientes.
+**Estado actual:** APK release V1.0.15 generado localmente. Usa `versionCode=17`, conserva el certificado estable y tiene firma v2 verificada. `assembleRelease` y `lintVitalRelease` finalizaron correctamente. Pasaron 2/2 pruebas instrumentadas de filtros y navegación inferior en el emulador API 36; también se instalaron y recorrieron los tres filtros y destinos en la release.
 
-## Entrega vigente: V1.0.6
+## Entrega vigente: V1.0.15
+
+Los botones de estado de las alertas se compactaron a una sola fila: nombre a la izquierda y cantidad a la derecha, sin icono. El alto mínimo es 50 dp. Los fondos son pasteles para los tres estados; un borde sutil identifica la selección. Activas (verde) sigue seleccionada inicialmente, seguida de Inactivas (ámbar) y Todas (azul). La navegación inferior mantiene Alertas (turquesa), Actividad (azul) y Ajustes (violeta). La prueba de interfaz comprobó selección exclusiva, etiquetas y contadores de tres cifras en 320 dp. En el emulador, la release se instaló sobre la anterior y se probaron los filtros y la navegación.
+
+La release firmada pasó `assembleRelease` y `lintVitalRelease`. `apksigner` verificó la firma v2 y el certificado SHA-256 estable `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`. No se iniciaron búsquedas ni se consumió cuota de SerpApi.
+
+| Variante | Identificador | Versión | Tamaño | SHA-256 |
+|---|---|---:|---:|---|
+| Release | `com.flightnotifications.app` | 1.0.15 (17) | 3.433.570 bytes | `ffd403fc7de721253756150e776d767dd869faff22d41d740b775b4a06c242d3` |
+
+- [APK release 1.0.15](../outputs/release-1.0.15/flight-notifications-1.0.15-release.apk)
+- [Hash del APK](../outputs/release-1.0.15/SHA256SUMS.txt)
+- [Filtros compactos en release](../outputs/release-1.0.15/release-home.png)
+- [Release con filtro Inactivas](../outputs/release-1.0.15/release-filter-inactive.png)
+- [Release con filtro Todas](../outputs/release-1.0.15/release-filter-all.png)
+
+## Evidencia histórica V1.0.14
+
+La barra inferior distingue Alertas, Actividad y Ajustes con colores propios. La versión agregó filtros de estados coloridos, comprobados con 2 pruebas instrumentadas y recorridos manuales en la release. El APK pesó 3.433.570 bytes y su SHA-256 fue `636763ab6930f11f3038f0f00dd7be68a02597a29e28b866eee5057241bd3efd`.
+
+- [APK release 1.0.14](../outputs/release-1.0.14/flight-notifications-1.0.14-release.apk)
+
+## Evidencia histórica V1.0.13
+
+Las iniciales se sustituyeron por logos en el componente compartido de alertas, resultados, actividad, diagnóstico y catálogo. Se incluyeron doce imágenes: Avianca, JetSMART, LATAM, Wingo, SATENA, Clic, Copa, American, Delta, United, Spirit e Iberia. Se guardan dentro del APK, sin descargas durante el uso. Para una combinación de compañías se muestra un logo por marca; las compañías sin imagen incluida conservan su nombre y un avión genérico. El texto destacado de la tarjeta sigue a 16 sp y en negrita. Fuentes: [logos de aerolíneas](LOGOS_AEROLINEAS.md).
+
+Pasaron las tres pruebas `AirlineLogoTest`: tarjeta verificada de JetSMART con datos locales, carga de los doce recursos y compañía desconocida, y combinación de JetSMART/Avianca sin duplicar marcas. Se revisaron sus capturas; no se hicieron búsquedas de vuelos ni se consumió cuota de SerpApi. La release firmada se instaló encima de la anterior y su catálogo mostró los seis logos nacionales. Se confirmó paquete, versión y firma v2 con el certificado SHA-256 estable `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`. No se ejecutaron las demás suites.
+
+| Variante | Identificador | Versión | Tamaño | SHA-256 |
+|---|---|---:|---:|---|
+| Release | `com.flightnotifications.app` | 1.0.13 (15) | 3.433.570 bytes | `a01ab54c3642cd36a213692eddcc5e5e36767000ee8dc4480244d5ea85c3ed3b` |
+
+- [APK release 1.0.13](../outputs/release-1.0.13/flight-notifications-1.0.13-release.apk)
+- [Hash del APK](../outputs/release-1.0.13/SHA256SUMS.txt)
+- [Tarjeta de prueba JetSMART](../outputs/release-1.0.13/qa-verified-jetsmart.png)
+- [Doce logos y compañía desconocida](../outputs/release-1.0.13/qa-airline-logos.png)
+- [Catálogo en la release instalada](../outputs/release-1.0.13/release-airline-catalog.png)
+
+## Evidencia histórica V1.0.12
+
+En la tarjeta de alerta, el bloque de tarifa se centra verticalmente en el espacio que va desde el switch hasta el separador. La insignia de verificación queda centrada respecto del importe. El nombre de la aerolínea se muestra a 16 sp y en negrita.
+
+La compilación y `lintVitalRelease` pasaron. `apksigner` confirmó la firma v2 y el certificado SHA-256 estable `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`. La APK se instaló sobre la versión anterior y abrió correctamente en el emulador API 36. La alerta de prueba no tenía una tarifa verificada; por eso el centrado del precio y de la insignia se comprobó en el código, pero no se pudo revisar con una tarifa visible en pantalla. Captura de comprobación: `outputs/release-1.0.12/flight-home.png`. No se ejecutaron pruebas automatizadas.
+
+| Variante | Identificador | Versión | Tamaño | SHA-256 |
+|---|---|---:|---:|---|
+| Release | `com.flightnotifications.app` | 1.0.12 (14) | 3.402.670 bytes | `f87fc17d6423754d56103902b9c7deb35b60f61f52a1ad2f554d0266a6fac3f0` |
+
+- [APK release 1.0.12 para instalar](../outputs/release-1.0.12/flight-notifications-1.0.12-release.apk)
+- [Hash del APK](../outputs/release-1.0.12/SHA256SUMS.txt)
+
+## Evidencia histórica V1.0.9
+
+Las alertas muestran los nombres completos de los aeropuertos para ida y regreso. Los máximos incluyen el símbolo `$` y el código COP. El botón de regreso tiene relleno primario sólido; el de nueva alerta es circular y flotante. Las aerolíneas se distinguen por color y una insignia de iniciales. Se reforzó el contraste entre fondo y tarjetas y se aplicó relleno sólido a los estados seleccionados y activos.
+
+## Evidencia histórica V1.0.8
+
+La versión incorporó autocompletado integrado con el teclado visible, formato COP al escribir, fondos más suaves y selector de hora inicial con frecuencia automática. La compilación debug y release finalizó correctamente, sin pruebas automatizadas ni instalación en teléfono. Los artefactos locales son `outputs/release-1.0.8/`.
+
+## Evidencia histórica V1.0.7
+
+El rediseño unifica la paleta de alto contraste, la tipografía, las tarjetas y la iconografía vectorial. Agrupa alertas, resultados, actividad, ajustes y diagnóstico en paneles más claros, con botones y controles de al menos 48 dp. En el detalle de búsqueda distingue las aerolíneas mencionadas por la fuente de las tarifas verificadas, y avisa cuando una aerolínea como Avianca aparece detectada pero sin una tarifa confirmada en una exploración parcial.
+
+`apksigner` verificó firma v2 y el certificado SHA-256 estable `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`. `aapt` confirmó `com.flightnotifications.app`, `versionCode=9` y `versionName=1.0.7`. Se generaron ambos APK localmente; no se copiaron a Google Drive.
+
+| Variante | Identificador | Versión | Tamaño | SHA-256 |
+|---|---|---:|---:|---|
+| Release | `com.flightnotifications.app` | 1.0.7 (9) | 3.367.774 bytes | `36c3018c90debec8e65724b5e9f39ec279fc65f14babd4854bbb71f438b8c085` |
+| Debug | `com.flightnotifications.app.debug` | 1.0.7-debug (9) | 36.272.967 bytes | `1a7915a8ae0c0dd0fa8fd8f1a4d82aec0288bf05404fb8fd624da602d0fbb203` |
+
+- [APK release 1.0.7 para instalar](../outputs/release-1.0.7/flight-notifications-1.0.7-release.apk)
+- [APK debug 1.0.7](../outputs/release-1.0.7/flight-notifications-1.0.7-debug.apk)
+- [Hashes de los APK](../outputs/release-1.0.7/SHA256SUMS.txt)
+
+## Evidencia histórica V1.0.6
 
 Esta versión corrige la actualización inmediata de la lista después de crear o borrar alertas, añade autocompletado de aeropuertos colombianos por ciudad, nombre y código IATA, y guarda nuevas alertas activas por defecto. Al elegir ida se abre enseguida el selector de regreso. Se ampliaron los botones y chips de acción para facilitar el toque y se corrigió el mensaje del detalle que podía decir que una tarifa superaba el máximo y, a la vez, estaba dentro de él.
 

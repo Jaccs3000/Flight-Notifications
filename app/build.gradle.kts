@@ -29,8 +29,8 @@ android {
         applicationId = "com.flightnotifications.app"
         minSdk = 33
         targetSdk = 37
-        versionCode = 8
-        versionName = "1.0.6"
+        versionCode = 17
+        versionName = "1.0.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
