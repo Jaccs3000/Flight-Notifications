@@ -7,6 +7,8 @@ import com.flightnotifications.app.data.local.SentNotificationEntity
 import com.flightnotifications.app.data.local.NotificationOutboxEntity
 import com.flightnotifications.app.data.notification.NotificationOutboxStore
 import com.flightnotifications.app.domain.model.AlertSearchResult
+import com.flightnotifications.app.domain.model.MinorPassenger
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -56,7 +58,8 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
         val routeChanged = previous != null && (
             previous.originIata != alert.originIata || previous.destinationIata != alert.destinationIata ||
                 previous.outboundDate != alert.outboundDate || previous.returnDate != alert.returnDate ||
-                previous.directOnly != alert.directOnly
+                previous.directOnly != alert.directOnly || previous.adults18Plus != alert.adults18Plus ||
+                previous.minorPassengersJson != alert.minorPassengersJson
             )
         val maximumChanged = previous != null && previous.maxTotalCop != alert.maxTotalCop
         val scheduleChanged = previous != null && previous.nextDueAt != alert.nextDueAt
@@ -102,7 +105,7 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
         if (currentAlert.criteriaVersion != alert.criteriaVersion) return false
         val previous = dao.getResult(alertId)
         val verified = outcome.offers.minByOrNull { it.totalCop }
-        val criteria = "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}|${alert.returnDate}|direct=${alert.directOnly}"
+        val criteria = "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}|${alert.returnDate.ifBlank { "one-way" }}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}"
         dao.putResult(
             FlightAlertResultEntity(
                 alertId = alertId,
@@ -154,15 +157,17 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
     }
 
     fun newAlert(
-        name: String, origin: String, destination: String, outbound: LocalDate, returning: LocalDate,
+        name: String, origin: String, destination: String, outbound: LocalDate, returning: LocalDate?,
         maximum: Long, frequency: Int, direct: Boolean, enabled: Boolean,
+        adults18Plus: Int = 1, minors: List<MinorPassenger> = emptyList(),
     ): FlightAlertEntity {
         val now = System.currentTimeMillis()
         return FlightAlertEntity(
             id = UUID.randomUUID().toString(), name = name.trim(), originIata = origin.trim().uppercase(),
-            destinationIata = destination.trim().uppercase(), outboundDate = outbound.toString(), returnDate = returning.toString(),
+            destinationIata = destination.trim().uppercase(), outboundDate = outbound.toString(), returnDate = returning?.toString().orEmpty(),
             maxTotalCop = maximum, frequencyHours = frequency, directOnly = direct, enabled = enabled,
             createdAt = now, updatedAt = now, nextDueAt = if (enabled) now else null,
+            adults18Plus = adults18Plus, minorPassengersJson = Json.encodeToString(minors),
         )
     }
 }

@@ -1,6 +1,10 @@
 package com.flightnotifications.app
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -11,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.isOn
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -69,8 +74,8 @@ class ProbeScreenTest {
         compose.onNodeWithText("$ 567.891").assertIsDisplayed()
         compose.onNodeWithText("Cada 12 h").assertIsDisplayed()
         assertTrue("La alerta recién guardada debe aparecer encendida", compose.onAllNodes(isOn()).fetchSemanticsNodes().isNotEmpty())
-        compose.onAllNodesWithText("Cartagena - Rafael Nuñez (CTG)")[0].assertIsDisplayed()
-        compose.onAllNodesWithText("Cali - Alfonso Bonilla Aragon (CLO)")[0].assertIsDisplayed()
+        compose.onAllNodesWithText("Cartagena - Rafael Núñez (CTG)")[0].assertIsDisplayed()
+        compose.onAllNodesWithText("Cali - Alfonso Bonilla Aragón (CLO)")[0].assertIsDisplayed()
 
         compose.onAllNodesWithText("Ver resultados")[0].performClick()
         compose.onNodeWithText("Último resultado").assertIsDisplayed()
@@ -85,6 +90,59 @@ class ProbeScreenTest {
             compose.onAllNodesWithText("$ 567.891").fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithText("Mis alertas").assertIsDisplayed()
+    }
+
+    @Test
+    fun oneWayAlertCollectsEachMinorAgeAndInfantSeatingChoice() {
+        val container = (compose.activity.application as FlightProbeApplication).container
+        var savedAlertId: String? = null
+        val existingAlertIds = runBlocking(Dispatchers.IO) { container.flightAlertRepository.currentAlerts().map { it.alert.id }.toSet() }
+        try {
+            compose.onNodeWithTag("new-alert").performClick()
+            compose.onNodeWithTag("trip-one-way").performClick()
+            compose.onNodeWithTag("trip-one-way").assertIsSelected()
+            compose.onNodeWithTag("trip-round-trip").assertIsNotSelected()
+            compose.onAllNodes(hasTestTag("alert-date-return")).assertCountEquals(0)
+            compose.onNodeWithTag("adult-plus").performScrollTo().performClick()
+
+            compose.onNodeWithTag("add-minor").performScrollTo().performClick()
+            compose.onNodeWithTag("minor-age").performTextInput("7")
+            compose.onNodeWithTag("minor-age").performImeAction()
+            compose.onNodeWithTag("confirm-minor-age").performClick()
+            compose.onNodeWithText("Niño de 7 años").assertIsDisplayed()
+
+            compose.onNodeWithTag("add-minor").performScrollTo().performClick()
+            compose.onNodeWithTag("minor-age").performTextInput("0")
+            compose.onNodeWithTag("minor-age").performImeAction()
+            compose.onNodeWithTag("infant-lap").assertIsDisplayed().performClick()
+            compose.onNodeWithTag("confirm-minor-age").performClick()
+            compose.onNodeWithText("Bebé de 0 años · en brazos").assertIsDisplayed()
+
+            compose.onNodeWithTag("alert-origin").performScrollTo().performTextInput("CTG")
+            compose.onNodeWithText("CARTAGENA DE INDIAS · CTG").performClick()
+            compose.onNodeWithTag("alert-destination").performTextInput("CLO")
+            compose.onNodeWithText("SANTIAGO DE CALI · CLO").performClick()
+            compose.onNodeWithTag("save-alert").performScrollTo().performClick()
+
+            compose.waitUntil(10_000) {
+                runBlocking(Dispatchers.IO) {
+                    container.flightAlertRepository.currentAlerts().any { it.alert.id !in existingAlertIds && it.alert.returnDate.isBlank() }
+                }
+            }
+            val saved = runBlocking(Dispatchers.IO) {
+                container.flightAlertRepository.currentAlerts().first { it.alert.id !in existingAlertIds && it.alert.returnDate.isBlank() }.alert
+            }
+            savedAlertId = saved.id
+            assertTrue(saved.enabled)
+            assertTrue(saved.adults18Plus == 2)
+            assertTrue(saved.minorPassengersJson.contains("\"age\":7"))
+            assertTrue(saved.minorPassengersJson.contains("\"age\":0"))
+            assertTrue(saved.minorPassengersJson.contains("\"infantSeating\":\"lap\""))
+            compose.onNodeWithText("Solo ida", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("2 adultos · 1 niño · 1 bebé").assertIsDisplayed()
+        } finally {
+            savedAlertId?.let { id -> runBlocking(Dispatchers.IO) { container.flightAlertRepository.remove(id) } }
+        }
     }
 
     @Test

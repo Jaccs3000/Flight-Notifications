@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         LowestNotifiedPriceEntity::class,
         InstallationMetadataEntity::class,
     ],
-    version = 5,
+    version = 7,
     exportSchema = true,
 )
 abstract class ProbeDatabase : RoomDatabase() {
@@ -60,6 +60,22 @@ abstract class ProbeDatabase : RoomDatabase() {
         val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `lastReviewCompletedAt` INTEGER")
+            }
+        }
+
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sent_notifications` ADD COLUMN `outboundDepartureLocal` TEXT")
+                db.execSQL("ALTER TABLE `sent_notifications` ADD COLUMN `returnDepartureLocal` TEXT")
+                db.execSQL("ALTER TABLE `notification_outbox` ADD COLUMN `outboundDepartureLocal` TEXT")
+                db.execSQL("ALTER TABLE `notification_outbox` ADD COLUMN `returnDepartureLocal` TEXT")
+            }
+        }
+
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `adults18Plus` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `minorPassengersJson` TEXT NOT NULL DEFAULT '[]'")
             }
         }
     }

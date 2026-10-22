@@ -71,8 +71,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.flightnotifications.app.domain.model.AccountSnapshot
 import com.flightnotifications.app.domain.model.FlightOption
+import com.flightnotifications.app.domain.model.FlightDepartureTime
 import com.flightnotifications.app.domain.model.ProbeOutcome
 import com.flightnotifications.app.domain.model.SearchCriteria
+import com.flightnotifications.app.domain.model.VerifiedRoundTripOffer
+import com.flightnotifications.app.domain.model.MinorPassenger
+import com.flightnotifications.app.domain.model.PassengerSelection
 import com.flightnotifications.app.domain.validation.ColombianAirportCatalog
 import com.flightnotifications.app.ui.theme.FlightAppColors
 import java.text.NumberFormat
@@ -82,6 +86,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Currency
 import java.util.Locale
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 private enum class AppPage { ALERTS, ACTIVITY, SETTINGS, DIAGNOSTIC, EDITOR, DETAIL }
 
@@ -343,7 +349,17 @@ private fun ActivityScreen(
             grouped.forEach { (day, notices) ->
                 Text(activityDayLabel(day, today), style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
                 notices.forEach { notice ->
-                    val alert = state.alerts.firstOrNull { it.alert.id == notice.alertId }?.alert
+                    val alertItem = state.alerts.firstOrNull { it.alert.id == notice.alertId }
+                    val alert = alertItem?.alert
+                    val matchingOffer = remember(notice.itineraryIdentity, alertItem?.result?.selectedOfferJson, alertItem?.result?.verifiedOffersJson) {
+                        val result = alertItem?.result
+                        val verifiedOffers = result?.verifiedOffersJson
+                            ?.let { runCatching { Json.decodeFromString<List<VerifiedRoundTripOffer>>(it) }.getOrNull() }
+                            .orEmpty()
+                        (verifiedOffers + listOfNotNull(
+                            result?.selectedOfferJson?.let { raw -> runCatching { Json.decodeFromString<VerifiedRoundTripOffer>(raw) }.getOrNull() },
+                        )).firstOrNull { it.itineraryIdentity == notice.itineraryIdentity }
+                    }
                     val origin = alert?.originIata?.let { airportCatalog?.find(it) }
                     val destination = alert?.destinationIata?.let { airportCatalog?.find(it) }
                     ActivityNoticeCard(
@@ -352,9 +368,14 @@ private fun ActivityScreen(
                         originAirport = origin?.let(::airportShortName),
                         destinationCity = destination?.city,
                         destinationAirport = destination?.let(::airportShortName),
-                        dates = alert?.let { "${formatTripDates(it.outboundDate, it.returnDate)} · 1 adulto" } ?: "1 adulto",
+                        dates = alert?.let {
+                            val minors = runCatching { Json.decodeFromString<List<MinorPassenger>>(it.minorPassengersJson) }.getOrDefault(emptyList())
+                            "${formatTripDates(it.outboundDate, it.returnDate)} · ${PassengerSelection.summary(it.adults18Plus, minors)}"
+                        } ?: "",
                         price = notice.priceCop,
-                        carriers = "${notice.outboundCarrier} / ${notice.returnCarrier}",
+                        carriers = listOf(notice.outboundCarrier, notice.returnCarrier).filter(String::isNotBlank).joinToString(" / "),
+                        outboundDepartureLocal = notice.outboundDepartureLocal ?: matchingOffer?.outbound?.firstOrNull()?.departureLocal,
+                        returnDepartureLocal = notice.returnDepartureLocal ?: matchingOffer?.returning?.firstOrNull()?.departureLocal,
                         sentAt = notice.sentAt,
                         onClick = { onOpenAlert(notice.alertId) },
                     )
@@ -375,6 +396,8 @@ private fun ActivityNoticeCard(
     dates: String,
     price: Long,
     carriers: String,
+    outboundDepartureLocal: String?,
+    returnDepartureLocal: String?,
     sentAt: Long,
     onClick: () -> Unit,
 ) {
@@ -405,6 +428,7 @@ private fun ActivityNoticeCard(
                 }
             }
             Text(dates, color = MaterialTheme.colorScheme.secondary)
+            ActivityDepartureTimes(outboundDepartureLocal, returnDepartureLocal)
             Text(formatCop(price), style = MaterialTheme.typography.headlineMedium, color = FlightAppColors.tealDark, fontWeight = FontWeight.Bold)
             Text("COP · ida y vuelta", color = MaterialTheme.colorScheme.secondary)
             HorizontalDivider()
@@ -412,6 +436,26 @@ private fun ActivityNoticeCard(
                 AirlineIdentity(carriers, Modifier.weight(1f), compact = true)
                 Text(formatShortTime(sentAt), color = MaterialTheme.colorScheme.secondary)
                 AppIcon(AppIcon.ChevronRight, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.secondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityDepartureTimes(outboundDepartureLocal: String?, returnDepartureLocal: String?) {
+    val outbound = FlightDepartureTime.format(outboundDepartureLocal)
+    val returning = FlightDepartureTime.format(returnDepartureLocal)
+    if (outbound == null && returning == null) return
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val departures = listOfNotNull(outbound?.let { "Ida" to it }, returning?.let { "Regreso" to it })
+        departures.forEach { (label, time) ->
+            val tint = if (label == "Ida") Color(0xFF1767C9) else Color(0xFF6D42C6)
+            val background = if (label == "Ida") FlightAppColors.paleBlue else FlightAppColors.paleLavender
+            Surface(Modifier.weight(1f), color = background, shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Salida $label", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text(time, color = tint, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -617,6 +661,7 @@ private fun EmptyAppCard(message: String) {
 private fun formatTripDates(outbound: String, returning: String): String {
     val format = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO"))
     val start = LocalDate.parse(outbound)
+    if (returning.isBlank()) return "Solo ida · ${start.format(format)}"
     val end = LocalDate.parse(returning)
     return if (start.month == end.month && start.year == end.year) "${start.dayOfMonth}–${end.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO")))}"
     else "${start.format(format)}–${end.format(format)}"
@@ -1018,6 +1063,14 @@ private fun OptionDetails(title: String, option: FlightOption) {
         val first = option.segments.firstOrNull()
         val last = option.segments.lastOrNull()
         Text("${first?.departure?.code ?: "?"} → ${last?.arrival?.code ?: "?"} · ${option.carriers.joinToString(" + ").ifBlank { "Operador no informado" }} · ${option.segments.size - 1} escala(s)")
+        option.segments.forEachIndexed { index, segment ->
+            val departure = FlightDepartureTime.format(segment.departure.localDateTime?.toString()) ?: "hora no informada"
+            Text(
+                "${if (option.segments.size > 1) "Tramo ${index + 1} · " else "Salida · "}${segment.departure.code} $departure",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         option.priceCop?.let { amount ->
             Text("Importe devuelto por esta opción: ${formatCop(amount)} (no equivale por sí solo al total de la reserva).", style = MaterialTheme.typography.bodySmall)
         }

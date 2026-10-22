@@ -6,6 +6,10 @@ import com.flightnotifications.app.data.local.FlightAlertEntity
 import com.flightnotifications.app.data.repository.AlertWithResult
 import com.flightnotifications.app.di.AppContainer
 import com.flightnotifications.app.domain.model.AlertSearchResult
+import com.flightnotifications.app.domain.model.MinorPassenger
+import com.flightnotifications.app.domain.model.PassengerSelection
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import com.flightnotifications.app.domain.validation.FlightAlertInputValidator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,11 +29,13 @@ data class AlertInput(
     val origin: String,
     val destination: String,
     val outboundDate: LocalDate,
-    val returnDate: LocalDate,
+    val returnDate: LocalDate?,
     val maximumCop: Long,
     val frequencyHours: Int,
     val directOnly: Boolean,
     val startTime: LocalTime,
+    val adults18Plus: Int = 1,
+    val minors: List<MinorPassenger> = emptyList(),
 )
 
 data class FlightAlertsUiState(
@@ -91,6 +97,8 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             frequency = input.frequencyHours,
                             direct = input.directOnly,
                             enabled = true,
+                            adults18Plus = input.adults18Plus,
+                            minors = input.minors,
                         ).copy(nextDueAt = requestedStartAt)
                     } else {
                         val savedStartTime = existing.nextDueAt?.let {
@@ -102,10 +110,12 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             originIata = input.origin.trim().uppercase(),
                             destinationIata = input.destination.trim().uppercase(),
                             outboundDate = input.outboundDate.toString(),
-                            returnDate = input.returnDate.toString(),
+                            returnDate = input.returnDate?.toString().orEmpty(),
                             maxTotalCop = input.maximumCop,
                             frequencyHours = input.frequencyHours,
                             directOnly = input.directOnly,
+                            adults18Plus = input.adults18Plus,
+                            minorPassengersJson = Json.encodeToString(input.minors),
                             nextDueAt = if (scheduleChanged) requestedStartAt else existing.nextDueAt,
                             updatedAt = System.currentTimeMillis(),
                         )
@@ -210,7 +220,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                 val result = completedResult ?: outcomes.firstOrNull()
                 container.flightAlertRepository.recordManualAttempt(alert, result?.attemptAtMillis ?: System.currentTimeMillis())
                 mutableState.value = mutableState.value.copy(
-                    message = result?.let(::resultMessage) ?: "La revisión finalizó sin resultado.",
+                    message = result?.let { resultMessage(it, alert) } ?: "La revisión finalizó sin resultado.",
                     error = if (result?.status == "ERROR") result.error?.let(::errorMessage) else null,
                 )
                 container.flightDiagnosticLog.record("ui_action manual_alert_review_complete alert_id=${id.take(8)} status=${result?.status ?: "UNKNOWN"} flight_gets=${result?.flightGetsStarted ?: 0}")
@@ -289,12 +299,20 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
             frequencyHours = input.frequencyHours,
             today = LocalDate.now(COLOMBIA_ZONE),
             containsDomesticAirport = container.airportCatalog::containsDomesticAirport,
+            adults18Plus = input.adults18Plus,
+            minors = input.minors,
         )
     }
 
-    private fun resultMessage(result: AlertSearchResult): String = when (result.status) {
-        "VERIFICADO" -> "Tarifa de ida y vuelta verificada para ${result.offers.size} combinación(es). GET de vuelos: ${result.flightGetsStarted}; exploración ${if (result.explorationLimited) "parcial" else "completa dentro de las opciones recibidas"}."
-        "NO_VERIFICADO" -> "Se recibieron itinerarios, pero la fuente no permitió verificar un total de ida y vuelta. GET: ${result.flightGetsStarted}."
+    private fun tripLabel(alert: FlightAlertEntity): String = if (alert.returnDate.isBlank()) "solo ida" else "ida y vuelta"
+    private fun passengerLabel(alert: FlightAlertEntity): String = PassengerSelection.summary(
+        alert.adults18Plus,
+        runCatching { Json.decodeFromString<List<MinorPassenger>>(alert.minorPassengersJson) }.getOrDefault(emptyList()),
+    )
+
+    private fun resultMessage(result: AlertSearchResult, alert: FlightAlertEntity): String = when (result.status) {
+        "VERIFICADO" -> "Tarifa de ${tripLabel(alert)} verificada para ${result.offers.size} opción(es) · ${passengerLabel(alert)}. GET de vuelos: ${result.flightGetsStarted}; exploración ${if (result.explorationLimited) "parcial" else "completa dentro de las opciones recibidas"}."
+        "NO_VERIFICADO" -> "Se recibieron itinerarios, pero la fuente no permitió confirmar el precio total. GET: ${result.flightGetsStarted}."
         "SIN_RESULTADOS_DEVUELTOS" -> "SerpApi no devolvió opciones para esta consulta. Esto no confirma que no existan vuelos."
         "EXPIRED" -> "La fecha de ida de esta alerta venció; no se hizo una consulta."
         else -> result.error?.let(::errorMessage) ?: "La revisión no produjo una tarifa verificable."
@@ -310,7 +328,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
         "NETWORK" -> "No fue posible conectar con SerpApi. No se reintentó esta consulta."
         "RATE_LIMITED" -> "SerpApi aplicó un límite temporal. La app esperará antes del siguiente turno."
         "SERVICE_UNAVAILABLE" -> "SerpApi no está disponible; la app esperará antes del siguiente turno."
-        "QUOTA_INSUFFICIENT" -> "La capacidad oficial no alcanza para iniciar la consulta mínima de ida y vuelta."
+        "QUOTA_INSUFFICIENT" -> "La capacidad oficial no alcanza para iniciar la búsqueda de esta alerta."
         "LOCAL_QUOTA" -> "El límite local de GET en 30 días alcanzó su tope."
         "CLOCK_UNTRUSTED" -> "La hora del dispositivo no es confiable; las consultas quedaron bloqueadas."
         "INVALID_CRITERIA", "EXPIRED" -> "Los criterios de esta alerta ya no son válidos o vencieron."

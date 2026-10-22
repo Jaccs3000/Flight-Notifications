@@ -30,12 +30,14 @@ class FlightAlertMigrationTest {
 
         helper.runMigrationsAndValidate(
             DATABASE_NAME,
-            5,
+            7,
             true,
             ProbeDatabase.MIGRATION_1_2,
             ProbeDatabase.MIGRATION_2_3,
             ProbeDatabase.MIGRATION_3_4,
             ProbeDatabase.MIGRATION_4_5,
+            ProbeDatabase.MIGRATION_5_6,
+            ProbeDatabase.MIGRATION_6_7,
         ).use { database ->
             database.query("SELECT COUNT(*) FROM flight_request_reservations").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -54,6 +56,8 @@ class FlightAlertMigrationTest {
                 while (cursor.moveToNext()) columns += cursor.getString(1)
                 assertTrue(columns.contains("criteriaVersion"))
                 assertTrue(columns.contains("lastReviewCompletedAt"))
+                assertTrue(columns.contains("adults18Plus"))
+                assertTrue(columns.contains("minorPassengersJson"))
             }
             database.query("PRAGMA table_info(flight_alert_results)").use { cursor ->
                 val columns = mutableSetOf<String>()
@@ -66,6 +70,68 @@ class FlightAlertMigrationTest {
             database.query("SELECT COUNT(*) FROM notification_outbox").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
+            }
+            listOf("sent_notifications", "notification_outbox").forEach { table ->
+                database.query("PRAGMA table_info($table)").use { cursor ->
+                    val columns = mutableSetOf<String>()
+                    while (cursor.moveToNext()) columns += cursor.getString(1)
+                    assertTrue(columns.contains("outboundDepartureLocal"))
+                    assertTrue(columns.contains("returnDepartureLocal"))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun migrationV6ToV7PreservesAlertsAndAddsAdultPassengerDefaults() {
+        helper.createDatabase(DATABASE_V6_NAME, 6).apply {
+            execSQL(
+                "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt) " +
+                    "VALUES ('v6-alert', 'Cartagena a Cali', 'CTG', 'CLO', '2027-03-25', '2027-03-28', 400000, 24, 1, 1, 100, 100)",
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DATABASE_V6_NAME, 7, true, ProbeDatabase.MIGRATION_6_7).use { database ->
+            database.query("SELECT name, adults18Plus, minorPassengersJson FROM flight_alerts WHERE id = 'v6-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Cartagena a Cali", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+                assertEquals("[]", cursor.getString(2))
+            }
+        }
+    }
+
+    @Test
+    fun migrationV5ToV6AddsNullableDepartureTimesWithoutLosingSavedNotices() {
+        helper.createDatabase(DATABASE_V5_NAME, 5).apply {
+            execSQL(
+                "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt) " +
+                    "VALUES ('v5-alert', 'Cartagena a Cali', 'CTG', 'CLO', '2027-03-25', '2027-03-28', 400000, 24, 1, 1, 100, 100)",
+            )
+            execSQL(
+                "INSERT INTO sent_notifications (id, alertId, fingerprint, itineraryIdentity, priceCop, sentAt, routeSummary, outboundCarrier, returnCarrier) " +
+                    "VALUES ('v5-notice', 'v5-alert', 'v5-notice', 'old-itinerary', 350000, 200, 'CTG ↔ CLO', 'JetSMART', 'JetSMART')",
+            )
+            execSQL(
+                "INSERT INTO notification_outbox (fingerprint, alertId, itineraryIdentity, priceCop, createdAt, routeSummary, outboundCarrier, returnCarrier, explorationLimited, criteriaVersion, notificationPolicyVersion) " +
+                    "VALUES ('v5-pending', 'v5-alert', 'pending-itinerary', 340000, 300, 'CTG ↔ CLO', 'Avianca', 'Avianca', 0, 1, 1)",
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DATABASE_V5_NAME, 6, true, ProbeDatabase.MIGRATION_5_6).use { database ->
+            database.query("SELECT routeSummary, outboundDepartureLocal, returnDepartureLocal FROM sent_notifications WHERE id = 'v5-notice'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CTG ↔ CLO", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+                assertTrue(cursor.isNull(2))
+            }
+            database.query("SELECT outboundCarrier, outboundDepartureLocal, returnDepartureLocal FROM notification_outbox WHERE fingerprint = 'v5-pending'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Avianca", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+                assertTrue(cursor.isNull(2))
             }
         }
     }
@@ -138,5 +204,7 @@ class FlightAlertMigrationTest {
         const val DATABASE_NAME = "flight_alert_migration_test.db"
         const val DATABASE_V2_NAME = "flight_alert_migration_v2_test.db"
         const val DATABASE_V4_NAME = "flight_alert_migration_v4_test.db"
+        const val DATABASE_V5_NAME = "flight_alert_migration_v5_test.db"
+        const val DATABASE_V6_NAME = "flight_alert_migration_v6_test.db"
     }
 }

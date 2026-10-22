@@ -74,8 +74,12 @@ class AirlineLogoTest {
         }
         compose.onNodeWithContentDescription("Logo de JetSMART").assertIsDisplayed()
         compose.onNodeWithText("JetSMART").assertIsDisplayed()
-        compose.onNodeWithText("Verificado").assertIsDisplayed()
+        assertTextIsSingleLine("JetSMART")
         compose.onNodeWithText("$ 527.640").assertIsDisplayed()
+        compose.onNodeWithText("Ida").assertIsDisplayed()
+        compose.onNodeWithText("09:00").assertIsDisplayed()
+        compose.onNodeWithText("Regreso").assertIsDisplayed()
+        compose.onNodeWithText("11:00").assertIsDisplayed()
         compose.onAllNodesWithText("JS").assertCountEquals(0)
         screenshot("qa-verified-jetsmart.png")
     }
@@ -125,14 +129,17 @@ class AirlineLogoTest {
     fun regularCardAlignsTheOfferAndBothActionButtons() {
         renderCard(353, 1f, verifiedAlert())
         screenshot("qa-card-353.png")
-        assertCardLayout()
+        assertCardLayout(directLabel = "Vuelos directos")
+        assertTextFits("Cartagena - Rafael Núñez (CTG)")
+        assertTextFits("Pereira - Matecaña (PEI)")
+        assertCardMatchesSketchHeaderAndOfferColumns()
     }
 
     @Test
     fun largerTextAndMixedAirlinesKeepPricesDatesAndControlsVisible() {
         renderCard(320, 1.3f, verifiedAlert(price = 1_527_640, outboundCarrier = "Avianca", returnCarrier = "LATAM", destination = "CLO"))
         screenshot("qa-card-large-text.png")
-        assertCardLayout("$ 1.527.640", "Avianca / LATAM")
+        assertCardLayout("$ 1.527.640", "Avianca / LATAM", fontScale = 1.3f)
         compose.onNodeWithContentDescription("Logo de Avianca").assertIsDisplayed()
         compose.onNodeWithContentDescription("Logo de LATAM").assertIsDisplayed()
     }
@@ -198,33 +205,56 @@ class AirlineLogoTest {
         }
     }
 
-    private fun assertCardLayout(priceText: String = "$ 527.640", airlineText: String = "JetSMART") {
+    private fun assertCardLayout(
+        priceText: String = "$ 527.640",
+        airlineText: String = "JetSMART",
+        fontScale: Float = 1f,
+        directLabel: String = "Vuelos directos",
+    ) {
         val price = bounds("alert-price-logo-qa")
         val airline = bounds("alert-airline-logo-qa")
-        val verified = bounds("alert-verification-logo-qa")
+        val outboundTime = bounds("alert-outbound-time-logo-qa")
+        val returnTime = bounds("alert-return-time-logo-qa")
         val dates = bounds("alert-dates-logo-qa")
         val details = bounds("alert-details-logo-qa")
         val offer = bounds("alert-offer-logo-qa")
         val direct = bounds("alert-direct-logo-qa")
+        val reviewMeta = bounds("alert-review-meta-logo-qa")
         assertTrue("La aerolínea debe quedar en la franja superior", airline.bottom <= details.top)
-        assertTrue("Verificado debe quedar debajo del precio", price.bottom <= verified.top)
-        assertTrue("El tipo de vuelo debe quedar debajo de la verificación", verified.bottom <= direct.top)
-        assertEquals(price.center.x, verified.center.x, 1f)
-        assertEquals(price.center.x, direct.center.x, 1f)
+        assertTrue("Los horarios deben quedar debajo del precio", price.bottom <= outboundTime.top)
+        assertTrue("Los horarios deben quedar debajo del precio", price.bottom <= returnTime.top)
+        assertEquals(outboundTime.top, returnTime.top, 1f)
+        assertTrue("La etiqueta de vuelos debe quedar arriba de Ver resultados", direct.bottom <= bounds("alert-results-logo-qa").top + 1f)
+        assertEquals("Vuelos directos y última revisión deben compartir línea", reviewMeta.center.y, direct.center.y, 1f)
         assertTrue("Las fechas y la oferta no deben superponerse", details.right <= offer.left || details.bottom <= offer.top)
-        assertTrue("El dato de vuelos debe quedar dentro del panel de la oferta", offer.left <= direct.left && direct.right <= offer.right)
+        assertTrue("Los horarios deben quedar dentro del panel de la oferta", offer.left <= outboundTime.left && outboundTime.right <= offer.right && offer.left <= returnTime.left && returnTime.right <= offer.right)
         assertEquals(bounds("alert-route-icon-logo-qa").left, bounds("alert-date-icon-logo-qa").left, 1f)
         assertEquals(bounds("alert-route-logo-qa").left, bounds("alert-date-text-logo-qa").left, 1f)
         assertEquals(bounds("toggle-alert-logo-qa").center.y, bounds("alert-menu-logo-qa").center.y, 1f)
         assertAlignedOrStacked(bounds("alert-budget-logo-qa"), bounds("alert-frequency-logo-qa"))
         assertAlignedOrStacked(bounds("alert-review-logo-qa"), bounds("alert-results-logo-qa"))
-        listOf("25–28 mar 2027", "4 días · 1 adulto", "Tu máximo", "Revisión automática", "$ 350.000", "Cada 12 h", "Ver resultados", priceText, airlineText, "Vuelos directos").forEach(::assertTextFits)
-        listOf("Escalas permitidas", "Última tarifa observada · requiere nueva verificación").forEach {
+        listOf("25–28 mar 2027", "4 días · 1 adulto", "Tu máximo", "Revisión automática", "$ 350.000", "Cada 12 h", "Ver resultados", priceText, airlineText, "Ida", "Regreso", "09:00", "11:00").forEach(::assertTextFits)
+        assertTextIsSingleLine(airlineText)
+        if (fontScale <= 1.15f) assertTextFits(directLabel)
+        listOf("Escalas permitidas", "Última tarifa observada · requiere nueva verificación", "Verificado").forEach {
             compose.onAllNodesWithText(it).assertCountEquals(0)
         }
         listOf("alert-airline", "alert-details", "alert-dates", "alert-offer", "alert-direct", "alert-budget", "alert-frequency", "alert-review", "alert-results").forEach {
             compose.onNodeWithTag("$it-logo-qa", useUnmergedTree = true).assertIsDisplayed()
         }
+    }
+
+    private fun assertCardMatchesSketchHeaderAndOfferColumns() {
+        val card = bounds("alert-card-logo-qa")
+        val header = bounds("alert-header-logo-qa")
+        val details = bounds("alert-details-logo-qa")
+        val offer = bounds("alert-offer-logo-qa")
+        assertEquals("La franja de aerolínea debe llegar a los bordes de la tarjeta", card.left, header.left, 1f)
+        assertEquals("La franja de aerolínea debe llegar a los bordes de la tarjeta", card.right, header.right, 1f)
+        assertEquals("La franja debe empezar arriba de la tarjeta", card.top, header.top, 1f)
+        assertTrue("La ruta y las fechas deben quedar a la izquierda de la oferta", details.right <= offer.left)
+        assertTrue("La ruta y la oferta deben compartir el mismo panel", details.top < offer.bottom && offer.top < details.bottom)
+        compose.onNodeWithText("Vuelos directos").assertIsDisplayed()
     }
 
     private fun bounds(tag: String): Rect = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -245,13 +275,26 @@ class AirlineLogoTest {
         compose.onNodeWithText(text, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         // Cached paragraphs can be wider than the final node even when every glyph fits.
         // Compare the glyph-run widths rather than cached paragraph alignment offsets.
-        assertTrue("Texto recortado: $text", layouts.isNotEmpty() && layouts.all { layout ->
+        val lineWidths = layouts.map { layout ->
+            "width=${layout.size.width},height=${layout.size.height},exceeded=${layout.multiParagraph.didExceedMaxLines},lines=" +
+                (0 until layout.lineCount).joinToString { line ->
+                    "${layout.getLineRight(line) - layout.getLineLeft(line)}/${layout.size.width},bottom=${layout.getLineBottom(line)},ellipsis=${layout.isLineEllipsized(line)}"
+                }
+        }
+        assertTrue("Texto recortado: $text; medición: $lineWidths", layouts.isNotEmpty() && layouts.all { layout ->
             !layout.multiParagraph.didExceedMaxLines && (0 until layout.lineCount).all { line ->
                 !layout.isLineEllipsized(line) &&
                     layout.getLineRight(line) - layout.getLineLeft(line) <= layout.size.width + 1f &&
                     layout.getLineBottom(line) <= layout.size.height + 1f
             }
         })
+    }
+
+    private fun assertTextIsSingleLine(text: String) {
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue("$text debe ocupar una sola línea", layouts.isNotEmpty() && layouts.all { it.lineCount == 1 })
     }
 
     private fun screenshot(name: String) {

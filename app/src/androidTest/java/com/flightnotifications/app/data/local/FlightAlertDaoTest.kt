@@ -85,7 +85,7 @@ class FlightAlertDaoTest {
     fun failedNewCriteriaAttemptPreservesLastVerifiedFareAndItsOriginalCriteria() = runBlocking {
         val alert = alert()
         dao.putAlert(alert)
-        val oldCriteria = "CTG-CLO|2027-03-25|2027-03-28|direct=true"
+        val oldCriteria = "CTG-CLO|2027-03-25|2027-03-28|direct=true|adults=1|minors=[]"
         dao.putResult(
             FlightAlertResultEntity(
                 alertId = alert.id,
@@ -139,7 +139,7 @@ class FlightAlertDaoTest {
         assertTrue(saved)
         val result = dao.getResult(alert.id)!!
         assertEquals("ERROR", result.status)
-        assertEquals("BOG-CLO|2027-04-01|2027-04-05|direct=true", result.attemptCriteria)
+        assertEquals("BOG-CLO|2027-04-01|2027-04-05|direct=true|adults=1|minors=[]", result.attemptCriteria)
         assertEquals(400_000L, result.attemptMaximumCop)
         assertEquals(350_000L, result.lastVerifiedTotalCop)
         assertEquals(oldCriteria, result.verifiedCriteria)
@@ -242,6 +242,8 @@ class FlightAlertDaoTest {
             routeSummary = "CTG ↔ CLO",
             outboundCarrier = "JetSMART",
             returnCarrier = "JetSMART",
+            outboundDepartureLocal = "2027-03-25T06:30",
+            returnDepartureLocal = "2027-03-28T18:45",
             explorationLimited = true,
             criteriaVersion = alert.criteriaVersion,
             notificationPolicyVersion = alert.notificationPolicyVersion,
@@ -255,6 +257,9 @@ class FlightAlertDaoTest {
         assertNotNull(dao.getFingerprint(pending.fingerprint))
         assertEquals(345_000L, dao.getLowestPrice(pending.itineraryIdentity)?.lowestPriceCop)
         assertEquals(1, dao.observeNotifications().first().size)
+        val savedNotice = dao.observeNotifications().first().single()
+        assertEquals("2027-03-25T06:30", savedNotice.outboundDepartureLocal)
+        assertEquals("2027-03-28T18:45", savedNotice.returnDepartureLocal)
         assertFalse(dao.enqueueNotification(pending))
         assertFalse(dao.completePendingNotification(pending.fingerprint))
     }

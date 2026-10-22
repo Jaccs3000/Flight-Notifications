@@ -31,6 +31,8 @@ class AppContainer(context: Context) {
         ProbeDatabase.MIGRATION_2_3,
         ProbeDatabase.MIGRATION_3_4,
         ProbeDatabase.MIGRATION_4_5,
+        ProbeDatabase.MIGRATION_5_6,
+        ProbeDatabase.MIGRATION_6_7,
     ).build()
     val flightAlertDao: FlightAlertDao = database.flightAlertDao()
 

@@ -3,6 +3,7 @@ package com.flightnotifications.app.domain.validation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.flightnotifications.app.domain.model.MinorPassenger
 import java.time.LocalDate
 
 class FlightAlertInputValidatorTest {
@@ -16,6 +17,16 @@ class FlightAlertInputValidatorTest {
                 assertNull(validate(name = name, frequency = frequency))
             }
         }
+    }
+
+    @Test
+    fun acceptsOneWayAndRequiresAgeAndInfantSeatChoiceForMinors() {
+        assertNull(validate(returning = null))
+        assertNull(validate(returning = null, minors = listOf(MinorPassenger(17), MinorPassenger(8))))
+        assertEquals(
+            "Indica si cada bebé menor de 2 años viajará en brazos o en su propio asiento.",
+            validate(minors = listOf(MinorPassenger(0))),
+        )
     }
 
     @Test
@@ -43,9 +54,11 @@ class FlightAlertInputValidatorTest {
         origin: String = "CTG",
         destination: String = "CLO",
         outbound: LocalDate = today,
-        returning: LocalDate = today.plusDays(2),
+        returning: LocalDate? = today.plusDays(2),
         maximum: Long = 500_000,
         frequency: Int = 24,
+        adults18Plus: Int = 1,
+        minors: List<MinorPassenger> = emptyList(),
     ) = FlightAlertInputValidator.validate(
         name = name,
         origin = origin,
@@ -56,5 +69,7 @@ class FlightAlertInputValidatorTest {
         frequencyHours = frequency,
         today = today,
         containsDomesticAirport = { code -> code.trim().uppercase() in domesticAirports },
+        adults18Plus = adults18Plus,
+        minors = minors,
     )
 }

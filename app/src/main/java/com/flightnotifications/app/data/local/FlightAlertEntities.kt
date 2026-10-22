@@ -27,6 +27,8 @@ data class FlightAlertEntity(
     @ColumnInfo(defaultValue = "1") val criteriaVersion: Long = 1,
     @ColumnInfo(defaultValue = "1") val notificationPolicyVersion: Long = 1,
     @ColumnInfo(defaultValue = "0") val candidateRotation: Int = 0,
+    @ColumnInfo(defaultValue = "1") val adults18Plus: Int = 1,
+    @ColumnInfo(defaultValue = "[]") val minorPassengersJson: String = "[]",
 )
 
 @Entity(
@@ -71,6 +73,8 @@ data class SentNotificationEntity(
     val routeSummary: String,
     val outboundCarrier: String,
     val returnCarrier: String,
+    val outboundDepartureLocal: String? = null,
+    val returnDepartureLocal: String? = null,
 )
 
 /** Durable notification outbox used to recover a process death between notify() and Room commit. */
@@ -89,6 +93,8 @@ data class NotificationOutboxEntity(
     val routeSummary: String,
     val outboundCarrier: String,
     val returnCarrier: String,
+    val outboundDepartureLocal: String? = null,
+    val returnDepartureLocal: String? = null,
     val explorationLimited: Boolean,
     val criteriaVersion: Long,
     val notificationPolicyVersion: Long,

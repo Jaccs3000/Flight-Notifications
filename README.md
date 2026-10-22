@@ -1,6 +1,6 @@
 # Alertas de vuelos — Android
 
-Aplicación privada para Android 13 o posterior que consulta SerpApi/Google Flights y avisa de precios observados de itinerarios nacionales de ida y vuelta en Colombia. No compra ni reserva tiquetes y no garantiza disponibilidad ni precio al pagar.
+Aplicación privada para Android 13 o posterior que consulta SerpApi/Google Flights y avisa de precios observados de itinerarios nacionales de solo ida o ida y vuelta en Colombia. No compra ni reserva tiquetes y no garantiza disponibilidad ni precio al pagar.
 
 ## Funciones
 
@@ -8,16 +8,18 @@ Aplicación privada para Android 13 o posterior que consulta SerpApi/Google Flig
 - Elegir la hora de inicio de la primera revisión automática y conservar la frecuencia elegida para las siguientes; Android puede aplazar el inicio por sus restricciones de ejecución.
 - Buscar aeropuertos con sugerencias en línea que se filtran mientras se escribe, introducir máximos con símbolo `$` y separadores de miles COP, y usar controles táctiles amplios.
 - Elegir vuelos directos (activado inicialmente) o permitir escalas. La ruta se valida contra el catálogo local de aeropuertos colombianos.
+- Elegir solo ida o ida y vuelta y configurar pasajeros: adultos de 18 años o más, y la edad de cada menor. Para bebés menores de 2 años también se indica si viajarán en brazos o en asiento.
 - Revisar precios manualmente o mediante WorkManager. Android puede aplazar revisiones por batería, Doze, conectividad o detención forzada; las frecuencias son objetivos, no horarios garantizados.
 - Comprobar la cuenta antes de cada tanda, limitar GET de vuelos con un presupuesto local compartido y bloquear nuevas consultas cuando no se pueda confirmar la capacidad.
 - Guardar el último resultado y mostrar como histórico el último total verificado si el intento más reciente no confirmó uno con los criterios actuales.
+- Mostrar la hora local de salida de ida y regreso en las tarjetas, resultados, avisos de actividad y notificaciones. En el detalle también se muestran las salidas de cada tramo cuando hay escalas.
 - En cada revisión verificada, enviar como máximo una notificación por alerta para la tarifa más baja que cumpla el máximo. Se puede volver a notificar el mismo itinerario y precio en revisiones posteriores.
 - Conservar registros de diagnóstico copiables para la cuenta y para vuelos. No contienen API key, tokens ni cuerpos JSON.
 - La app permite capturas de pantalla.
 - Las aerolíneas del catálogo y seis compañías adicionales muestran logos incluidos en el APK, incluso sin conexión. Las ofertas con varias compañías muestran sus logos; una compañía sin imagen incluida conserva su nombre y un icono de avión. Fuentes y recursos: [logos de aerolíneas](docs/LOGOS_AEROLINEAS.md).
 - La navegación inferior identifica Alertas en turquesa, Actividad en azul y Ajustes en violeta. Los filtros de alertas usan botones compactos de fondo pastel para Activas, Inactivas y Todas, con el texto a la izquierda y el contador a la derecha.
 
-La app consulta todas las aerolíneas que devuelve la fuente, también las que no estén en el catálogo informativo incluido. La cobertura de SerpApi/Google Flights no es universal. Los horarios de los segmentos se usan internamente para validar e identificar itinerarios; no se muestran como información de la oferta en la interfaz.
+La app consulta todas las aerolíneas que devuelve la fuente, también las que no estén en el catálogo informativo incluido. La cobertura de SerpApi/Google Flights no es universal. Las horas se muestran en hora local reportada por el aeropuerto; en rutas nacionales de Colombia corresponden a la hora colombiana.
 
 ## Compilar
 
@@ -47,7 +49,9 @@ Pruebas instrumentadas con un emulador/dispositivo conectado:
 5. Guarda una alerta propia y activa su interruptor para programar revisiones. Android solicita permiso de notificaciones. Las búsquedas de vuelos consumen cuota de SerpApi y presupuesto local; la pantalla explica el máximo por cada revisión manual.
 6. **Buscar** inicia una revisión manual tras mostrar una confirmación. Cancelar no inicia GET de vuelos. La revisión manual de una alerta pausada no la activa.
 
-Una tarifa se presenta como total observado sólo si los datos asociados de ida y regreso pasan las validaciones conservadoras de tipo, ruta, fechas, escalas, moneda y precio. La app nunca suma los importes por etapa. `VERIFICADO` describe lo que la respuesta permitió observar; no acredita equipaje, cupos para varias personas ni disponibilidad al comprar. Comprueba las condiciones en el proveedor antes de reservar.
+Las búsquedas envían a SerpApi las cantidades de adultos, niños (2–11), bebés en asiento y bebés en brazos que Google Flights admite. La edad exacta se conserva localmente; la API no recibe la edad ni tiene una categoría de adolescente, por lo que las edades 12–17 se incluyen en `adults` para cotizar. Confirma con la aerolínea las reglas de menores y la tarifa final.
+
+Una tarifa de ida y vuelta se presenta como total observado sólo si los datos asociados de ida y regreso pasan las validaciones conservadoras de tipo, ruta, fechas, escalas, moneda y precio. La app nunca suma los importes por etapa. Una búsqueda de solo ida usa el precio del itinerario de salida. `VERIFICADO` describe lo que la respuesta permitió observar; no acredita equipaje, cupos para varias personas ni disponibilidad al comprar. Comprueba las condiciones en el proveedor antes de reservar.
 
 ## Actualizaciones, firma y artefactos
 

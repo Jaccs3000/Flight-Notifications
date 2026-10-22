@@ -138,13 +138,14 @@ class SerpApiRepository(
                 results += batchFailure(alert, invalid, attemptAt, accountRemaining, 0)
                 continue
             }
-            if (accountRemaining < 2 || localRemaining < 2 || maximumGets - allGets[0] < 2) {
+            val minimumGets = if (criteria.returnDate == null) 1 else 2
+            if (accountRemaining < minimumGets || localRemaining < minimumGets || maximumGets - allGets[0] < minimumGets) {
                 results += batchFailure(alert, when {
-                    accountRemaining < 2 -> FailureCode.QUOTA_INSUFFICIENT.name
-                    localRemaining < 2 -> FailureCode.LOCAL_QUOTA.name
+                    accountRemaining < minimumGets -> FailureCode.QUOTA_INSUFFICIENT.name
+                    localRemaining < minimumGets -> FailureCode.LOCAL_QUOTA.name
                     else -> "BATCH_BUDGET_REACHED"
                 }, attemptAt, accountRemaining, 0)
-                batchStopReason = if (accountRemaining < 2) FailureCode.QUOTA_INSUFFICIENT.name else if (localRemaining < 2) FailureCode.LOCAL_QUOTA.name else "BATCH_BUDGET_REACHED"
+                batchStopReason = if (accountRemaining < minimumGets) FailureCode.QUOTA_INSUFFICIENT.name else if (localRemaining < minimumGets) FailureCode.LOCAL_QUOTA.name else "BATCH_BUDGET_REACHED"
                 continue
             }
             var alertGets = 0
@@ -172,7 +173,8 @@ class SerpApiRepository(
                 malformed += outboundParsed.malformedOptions
                 val currentLocalDate = LocalDate.now(SearchCriteria.COLOMBIA_ZONE)
                 val candidateOptions = outboundParsed.options
-                    .filter { FlightOptionValidator.isOutbound(it, criteria) && isDomesticOption(it) && !it.departureToken.isNullOrBlank() }
+                    .filter { FlightOptionValidator.isOutbound(it, criteria) && isDomesticOption(it) }
+                    .filter { criteria.returnDate == null || !it.departureToken.isNullOrBlank() }
                     .filter { option ->
                         val departure = option.segments.firstOrNull()?.departure?.localDateTime
                         departure != null && (criteria.outboundDate != currentLocalDate || departure.isAfter(LocalDateTime.now(SearchCriteria.COLOMBIA_ZONE)))
@@ -181,8 +183,15 @@ class SerpApiRepository(
                 candidateCount = orderedCandidates.size
                 val limit = minOf(MAX_CANDIDATES_PER_ALERT, orderedCandidates.size)
                 for (candidate in orderedCandidates.take(limit)) {
-                    if (accountRemaining < 1 || localRemaining < 1 || maximumGets - allGets[0] < 1) break
                     candidatesConsidered++
+                    if (criteria.returnDate == null) {
+                        candidatesCompleted++
+                        if (candidate.type.isOneWayType() && candidate.priceCop != null) {
+                            offers += makeVerifiedOffer(alert.id, candidate, null, candidate.priceCop, criteria)
+                        }
+                        continue
+                    }
+                    if (accountRemaining < 1 || localRemaining < 1 || maximumGets - allGets[0] < 1) break
                     val returnParameters = outboundParameters + ("departure_token" to candidate.departureToken!!)
                     val returnRoot = performFlightGet(RequestStage.RETURN, runId, returnParameters) {
                         allGets[0]++; alertGets++; accountRemaining--; localRemaining--
@@ -204,7 +213,7 @@ class SerpApiRepository(
                     if (candidate.type.isRoundTripType() && outboundPrice != null) {
                         validReturns.forEach { returningOption ->
                             if (returningOption.type.isRoundTripType() && returningOption.priceCop == outboundPrice) {
-                                offers += makeVerifiedOffer(alert.id, candidate, returningOption, outboundPrice)
+                                offers += makeVerifiedOffer(alert.id, candidate, returningOption, outboundPrice, criteria)
                             }
                         }
                     }
@@ -515,7 +524,7 @@ class SerpApiRepository(
         val reflected = root["search_parameters"] as? JsonObject ?: return
         val keysToCheck = listOf(
             "engine", "departure_id", "arrival_id", "outbound_date", "return_date", "type",
-            "adults", "travel_class", "currency", "gl", "hl", "stops", "sort_by", "departure_token",
+            "adults", "children", "infants_in_seat", "infants_on_lap", "travel_class", "currency", "gl", "hl", "stops", "sort_by", "departure_token",
         )
         keysToCheck.forEach { key ->
             val actual = reflected[key]?.let { element -> (element as? JsonPrimitive)?.content }
@@ -526,22 +535,28 @@ class SerpApiRepository(
         }
     }
 
-    private fun searchParameters(criteria: SearchCriteria, apiKey: String): Map<String, String> = linkedMapOf(
-        "engine" to "google_flights",
-        "departure_id" to criteria.origin,
-        "arrival_id" to criteria.destination,
-        "outbound_date" to criteria.outboundDate.toString(),
-        "return_date" to criteria.returnDate.toString(),
-        "type" to "1",
-        "adults" to "1",
-        "travel_class" to "1",
-        "currency" to "COP",
-        "gl" to "co",
-        "hl" to "es",
-        "stops" to if (criteria.directOnly) "1" else "0",
-        "sort_by" to "2",
-        "api_key" to apiKey,
-    )
+    private fun searchParameters(criteria: SearchCriteria, apiKey: String): Map<String, String> {
+        val passengers = com.flightnotifications.app.domain.model.PassengerSelection.counts(criteria.adults18Plus, criteria.minors)
+        return buildMap {
+            put("engine", "google_flights")
+            put("departure_id", criteria.origin)
+            put("arrival_id", criteria.destination)
+            put("outbound_date", criteria.outboundDate.toString())
+            criteria.returnDate?.let { put("return_date", it.toString()) }
+            put("type", if (criteria.returnDate == null) "2" else "1")
+            put("adults", passengers.adults.toString())
+            put("children", passengers.children.toString())
+            put("infants_in_seat", passengers.infantsInSeat.toString())
+            put("infants_on_lap", passengers.infantsOnLap.toString())
+            put("travel_class", "1")
+            put("currency", "COP")
+            put("gl", "co")
+            put("hl", "es")
+            put("stops", if (criteria.directOnly) "1" else "0")
+            put("sort_by", "2")
+            put("api_key", apiKey)
+        }
+    }
 
     private suspend fun <T> networkCall(operation: String, log: DiagnosticLog?, call: suspend () -> T): T = try {
         call()
@@ -593,13 +608,16 @@ class SerpApiRepository(
     private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt).coerceAtLeast(0L) / 1_000_000L
 
     private fun String?.isRoundTripType(): Boolean = this?.equals("Round trip", ignoreCase = true) == true
+    private fun String?.isOneWayType(): Boolean = this?.equals("One way", ignoreCase = true) == true
 
     private fun FlightAlertEntity.toSearchCriteria(): SearchCriteria = SearchCriteria(
         outboundDate = LocalDate.parse(outboundDate),
-        returnDate = LocalDate.parse(returnDate),
+        returnDate = returnDate.takeIf(String::isNotBlank)?.let(LocalDate::parse),
         directOnly = directOnly,
         origin = originIata.uppercase(),
         destination = destinationIata.uppercase(),
+        adults18Plus = adults18Plus,
+        minors = kotlinx.serialization.json.Json.decodeFromString(minorPassengersJson),
     )
 
     private fun batchFailure(
@@ -642,8 +660,9 @@ class SerpApiRepository(
     private fun makeVerifiedOffer(
         alertId: String,
         outbound: com.flightnotifications.app.domain.model.FlightOption,
-        returning: com.flightnotifications.app.domain.model.FlightOption,
+        returning: com.flightnotifications.app.domain.model.FlightOption?,
         totalCop: Long,
+        criteria: SearchCriteria,
     ): VerifiedRoundTripOffer {
         fun convert(option: com.flightnotifications.app.domain.model.FlightOption) = option.segments.map { segment ->
             AlertFlightSegment(
@@ -656,9 +675,11 @@ class SerpApiRepository(
             )
         }
         val out = convert(outbound)
-        val back = convert(returning)
+        val back = returning?.let(::convert).orEmpty()
         val identityData = buildString {
             append(alertId).append("|COP|")
+            append(if (criteria.returnDate == null) "one-way" else "round-trip").append('|')
+            append(criteria.adults18Plus).append('|').append(criteria.minors.joinToString(",") { "${it.age}:${it.infantSeating.orEmpty()}" }).append('|')
             (out + back).forEach { segment ->
                 append(segment.fromIata.uppercase()).append('>').append(segment.toIata.uppercase()).append('|')
                 append(segment.departureLocal.orEmpty()).append('|').append(segment.arrivalLocal.orEmpty()).append('|')
@@ -672,7 +693,7 @@ class SerpApiRepository(
             outbound = out,
             returning = back,
             outboundAirline = out.mapNotNull { it.airline.takeIf(String::isNotBlank) }.distinct().joinToString(" + ").ifBlank { "Operador no informado" },
-            returnAirline = back.mapNotNull { it.airline.takeIf(String::isNotBlank) }.distinct().joinToString(" + ").ifBlank { "Operador no informado" },
+            returnAirline = back.mapNotNull { it.airline.takeIf(String::isNotBlank) }.distinct().joinToString(" + "),
             totalCop = totalCop,
             itineraryIdentity = identity,
             fingerprint = fingerprint,

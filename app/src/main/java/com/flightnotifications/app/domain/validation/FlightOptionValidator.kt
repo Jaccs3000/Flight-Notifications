@@ -13,7 +13,7 @@ object FlightOptionValidator {
         isRoute(option, criteria.origin, criteria.destination, criteria.outboundDate, criteria.directOnly)
 
     fun isReturn(option: FlightOption, criteria: SearchCriteria): Boolean =
-        isRoute(option, criteria.destination, criteria.origin, criteria.returnDate, criteria.directOnly)
+        criteria.returnDate?.let { isRoute(option, criteria.destination, criteria.origin, it, criteria.directOnly) } ?: false
 
     private fun isRoute(
         option: FlightOption,

@@ -15,6 +15,10 @@ import com.flightnotifications.app.domain.model.AlertSearchResult
 import com.flightnotifications.app.data.repository.FlightAlertRepository
 import com.flightnotifications.app.data.local.FlightAlertEntity
 import com.flightnotifications.app.domain.model.VerifiedRoundTripOffer
+import com.flightnotifications.app.domain.model.FlightDepartureTime
+import com.flightnotifications.app.domain.model.MinorPassenger
+import com.flightnotifications.app.domain.model.PassengerSelection
+import kotlinx.serialization.json.Json
 import com.flightnotifications.app.domain.validation.OfferNotificationPolicy
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -69,10 +73,18 @@ class FlightNotificationDispatcher(
         if (current.criteriaVersion != alert.criteriaVersion || current.notificationPolicyVersion != alert.notificationPolicyVersion ||
             current.originIata != alert.originIata || current.destinationIata != alert.destinationIata ||
             current.outboundDate != alert.outboundDate || current.returnDate != alert.returnDate || current.directOnly != alert.directOnly ||
+            current.adults18Plus != alert.adults18Plus || current.minorPassengersJson != alert.minorPassengersJson ||
             current.maxTotalCop != alert.maxTotalCop || !current.enabled
         ) return DispatchStatus.STALE_CRITERIA
 
-        val route = "${alert.originIata} ↔ ${alert.destinationIata} · ${alert.outboundDate} / ${alert.returnDate}"
+        val returnTrip = alert.returnDate.isNotBlank()
+        val arrow = if (returnTrip) "↔" else "→"
+        val dates = if (returnTrip) "${alert.outboundDate} / ${alert.returnDate}" else alert.outboundDate
+        val passengers = PassengerSelection.summary(
+            alert.adults18Plus,
+            runCatching { Json.decodeFromString<List<MinorPassenger>>(alert.minorPassengersJson) }.getOrDefault(emptyList()),
+        )
+        val route = "${alert.originIata} $arrow ${alert.destinationIata} · $dates · ${if (returnTrip) "ida y vuelta" else "solo ida"} · $passengers"
         // A unique delivery ID makes retries of this review idempotent without suppressing
         // the same fare in a later review.
         val deliveryId = UUID.randomUUID().toString()
@@ -85,6 +97,8 @@ class FlightNotificationDispatcher(
             routeSummary = route,
             outboundCarrier = selected.outboundAirline,
             returnCarrier = selected.returnAirline,
+            outboundDepartureLocal = selected.outbound.firstOrNull()?.departureLocal,
+            returnDepartureLocal = selected.returning.firstOrNull()?.departureLocal,
             explorationLimited = outcome.explorationLimited,
             criteriaVersion = alert.criteriaVersion,
             notificationPolicyVersion = alert.notificationPolicyVersion,
@@ -112,14 +126,18 @@ class FlightNotificationDispatcher(
     }
 
     private suspend fun publish(item: NotificationOutboxEntity) {
+        val departureSummary = listOfNotNull(
+            FlightDepartureTime.format(item.outboundDepartureLocal)?.let { "ida $it" },
+            FlightDepartureTime.format(item.returnDepartureLocal)?.let { "regreso $it" },
+        ).joinToString(" · ").takeIf(String::isNotEmpty)?.let { " · Salidas: $it" }.orEmpty()
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_flight)
             .setContentTitle("Tarifa más baja verificada")
-            .setContentText("${item.routeSummary} · ${formatCop(item.priceCop)}")
+            .setContentText("${item.routeSummary}$departureSummary · ${formatCop(item.priceCop)}")
             .setStyle(
                 Notification.BigTextStyle().bigText(
-                    "${item.routeSummary} · 1 adulto · ${formatCop(item.priceCop)} ida y vuelta · " +
-                        "${item.outboundCarrier} / ${item.returnCarrier}. Precio observado en Google Flights; verifica condiciones antes de comprar. " +
+                    "${item.routeSummary}$departureSummary · ${formatCop(item.priceCop)} ${if (item.returnCarrier.isBlank()) "solo ida" else "ida y vuelta"} · " +
+                        "${item.outboundCarrier}${item.returnCarrier.takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty()}. Precio observado en Google Flights; verifica condiciones antes de comprar. " +
                         "La misma tarifa puede avisarse otra vez en una próxima revisión." +
                         if (item.explorationLimited) " Exploración parcial: no se verificaron todas las combinaciones." else "",
                 ),

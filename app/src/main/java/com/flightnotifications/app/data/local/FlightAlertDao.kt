@@ -137,6 +137,8 @@ abstract class FlightAlertDao {
             routeSummary = pending.routeSummary,
             outboundCarrier = pending.outboundCarrier,
             returnCarrier = pending.returnCarrier,
+            outboundDepartureLocal = pending.outboundDepartureLocal,
+            returnDepartureLocal = pending.returnDepartureLocal,
         )
         val sent = NotifiedFingerprintEntity(
             fingerprint = pending.fingerprint,

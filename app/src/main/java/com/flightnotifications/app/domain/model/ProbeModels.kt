@@ -7,16 +7,19 @@ import java.time.ZoneId
 
 data class SearchCriteria(
     val outboundDate: LocalDate,
-    val returnDate: LocalDate,
+    val returnDate: LocalDate?,
     val directOnly: Boolean,
     val origin: String = "CTG",
     val destination: String = "CLO",
+    val adults18Plus: Int = 1,
+    val minors: List<MinorPassenger> = emptyList(),
 ) {
     fun validationError(today: LocalDate = LocalDate.now(COLOMBIA_ZONE)): String? = when {
         !IATA.matches(origin) || !IATA.matches(destination) -> "Los aeropuertos deben usar códigos IATA de tres letras."
         origin == destination -> "El origen y el destino deben ser distintos."
         outboundDate.isBefore(today) -> "La fecha de ida no puede estar en el pasado."
-        !returnDate.isAfter(outboundDate) -> "La fecha de regreso debe ser posterior a la ida."
+        returnDate != null && !returnDate.isAfter(outboundDate) -> "La fecha de regreso debe ser posterior a la ida."
+        PassengerSelection.validationError(adults18Plus, minors) != null -> PassengerSelection.validationError(adults18Plus, minors)
         else -> null
     }
 

@@ -7,6 +7,7 @@ import com.flightnotifications.app.domain.model.LocalBudgetSnapshot
 import com.flightnotifications.app.domain.model.BudgetReservationResult
 import com.flightnotifications.app.domain.model.RequestStage
 import com.flightnotifications.app.domain.model.SearchCriteria
+import com.flightnotifications.app.domain.model.MinorPassenger
 import com.flightnotifications.app.security.CredentialStore
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
@@ -14,6 +15,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -335,6 +337,42 @@ class SerpApiRepositoryTest {
         assertEquals(2, result.single().candidatesConsidered)
         assertFalse(result.single().explorationLimited)
         assertEquals(3, budget.reserved.size)
+    }
+
+    @Test
+    fun oneWaySearchUsesOneFlightGetAndMapsPassengersToSerpApiCategories() = runBlocking {
+        server.enqueue(jsonResponse(accountJson().replace("\"total_searches_left\":500", "\"total_searches_left\":1").replace("\"plan_searches_left\":500", "\"plan_searches_left\":1")))
+        val oneWayResponse = fixture("outbound.json")
+            .replace("\"return_date\": \"2027-03-28\",\n", "")
+            .replace("\"type\": 1", "\"type\": 2")
+            .replace("\"adults\": 1", "\"adults\": 3")
+            .replace("\"Round trip\"", "\"One way\"")
+        server.enqueue(jsonResponse(oneWayResponse))
+        val budget = FakeBudget()
+        val alert = alert().copy(
+            returnDate = "",
+            adults18Plus = 2,
+            minorPassengersJson = Json.encodeToString(
+                listOf(MinorPassenger(17), MinorPassenger(8), MinorPassenger(0, "lap"), MinorPassenger(1, "seat")),
+            ),
+        )
+
+        val result = repository(budget).runAlertBatch(listOf(alert)).single()
+
+        assertEquals("VERIFICADO", result.status)
+        assertEquals(1, result.flightGetsStarted)
+        assertEquals(1, budget.reserved.size)
+        assertEquals(2, server.requestCount) // one account check + one one-way search
+        assertTrue(takeLine().contains("/account.json"))
+        val flightRequest = takeLine()
+        assertTrue(flightRequest.contains("type=2"))
+        assertFalse(flightRequest.contains("return_date="))
+        assertTrue(flightRequest.contains("adults=3")) // two 18+ adults + the 17-year-old API adult category
+        assertTrue(flightRequest.contains("children=1"))
+        assertTrue(flightRequest.contains("infants_on_lap=1"))
+        assertTrue(flightRequest.contains("infants_in_seat=1"))
+        assertTrue(result.offers.isNotEmpty())
+        assertTrue(result.offers.all { it.returning.isEmpty() })
     }
 
     @Test

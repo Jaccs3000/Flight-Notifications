@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import androidx.annotation.DrawableRes
 import com.flightnotifications.app.R
 import java.text.Normalizer
@@ -42,6 +43,7 @@ internal fun AirlineIdentity(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     prominent: Boolean = false,
+    prominentCompact: Boolean = false,
     centered: Boolean = false,
     logoSize: Dp? = null,
 ) {
@@ -81,13 +83,16 @@ internal fun AirlineIdentity(
             modifier = if (centered) Modifier else Modifier.weight(1f),
             color = if (brands.size == 1) brands.first().color else MaterialTheme.colorScheme.onSurface,
             style = when {
-                prominent && brands.size > 1 -> MaterialTheme.typography.titleMedium
+                prominent && brands.size > 1 -> MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp)
+                prominentCompact && brands.size > 1 -> MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp)
+                prominentCompact -> MaterialTheme.typography.titleMedium
                 prominent -> MaterialTheme.typography.titleLarge
                 compact -> MaterialTheme.typography.bodySmall
                 else -> MaterialTheme.typography.bodyMedium
             },
-            fontWeight = if (prominent) FontWeight.Bold else FontWeight.SemiBold,
-            maxLines = if (centered || prominent) 2 else 1,
+            fontWeight = if (prominent || prominentCompact) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false,
             textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start,
             overflow = TextOverflow.Ellipsis,
         )
