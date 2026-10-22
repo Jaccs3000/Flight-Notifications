@@ -9,6 +9,10 @@ import com.flightnotifications.app.domain.model.AlertSearchResult
 import com.flightnotifications.app.domain.model.AlertFlightSegment
 import com.flightnotifications.app.domain.model.VerifiedRoundTripOffer
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -135,6 +139,39 @@ class FlightAlertRepositoryTest {
         assertTrue(resumed.enabled)
         assertEquals(paused.notificationPolicyVersion + 1, resumed.notificationPolicyVersion)
         assertTrue(repository.dueAlerts(Long.MAX_VALUE).any { it.id == original.id })
+    }
+
+    @Test
+    fun repeatedPauseAndResumeAcrossSeveralAlertsAlwaysPersistsTheRequestedState() = runBlocking {
+        val alerts = (0 until 4).map { index ->
+            alert().copy(id = "toggle-stress-$index", enabled = true, nextDueAt = 1)
+                .also { dao.putAlert(it) }
+        }
+
+        coroutineScope {
+            alerts.map { original ->
+                async(Dispatchers.IO) {
+                    repeat(30) {
+                        repository.setEnabled(original.id, false)
+                        val paused = repository.find(original.id)!!
+                        assertFalse("${original.id} should be paused", paused.enabled)
+                        assertEquals("${original.id} pause should clear schedule", null, paused.nextDueAt)
+
+                        repository.setEnabled(original.id, true)
+                        val resumed = repository.find(original.id)!!
+                        assertTrue("${original.id} should be active", resumed.enabled)
+                        assertTrue("${original.id} should have a scheduled review", resumed.nextDueAt != null)
+                    }
+                }
+            }.awaitAll()
+        }
+
+        alerts.forEach { original ->
+            val final = repository.find(original.id)!!
+            assertTrue("${original.id} should finish active", final.enabled)
+            assertEquals("${original.id} should record every state change", original.notificationPolicyVersion + 60, final.notificationPolicyVersion)
+            assertTrue("${original.id} should be due when resumed", repository.dueAlerts(Long.MAX_VALUE).any { it.id == original.id })
+        }
     }
 
     private fun alert() = FlightAlertEntity(

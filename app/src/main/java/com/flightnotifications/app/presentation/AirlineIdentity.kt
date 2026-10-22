@@ -23,6 +23,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.annotation.DrawableRes
 import com.flightnotifications.app.R
 import java.text.Normalizer
@@ -36,14 +37,21 @@ internal data class AirlineBrand(
 )
 
 @Composable
-internal fun AirlineIdentity(airline: String, modifier: Modifier = Modifier, compact: Boolean = false, prominent: Boolean = false) {
+internal fun AirlineIdentity(
+    airline: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    prominent: Boolean = false,
+    centered: Boolean = false,
+    logoSize: Dp? = null,
+) {
     val brands = remember(airline) { airlineBrands(airline) }
-    val badgeSize = if (compact) 28.dp else 32.dp
+    val badgeSize = logoSize ?: if (compact) 28.dp else 32.dp
 
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = if (centered) Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             brands.forEach { brand ->
@@ -70,15 +78,17 @@ internal fun AirlineIdentity(airline: String, modifier: Modifier = Modifier, com
         }
         Text(
             text = airline,
-            modifier = Modifier.weight(1f),
+            modifier = if (centered) Modifier else Modifier.weight(1f),
             color = if (brands.size == 1) brands.first().color else MaterialTheme.colorScheme.onSurface,
             style = when {
-                prominent -> MaterialTheme.typography.bodyLarge
+                prominent && brands.size > 1 -> MaterialTheme.typography.titleMedium
+                prominent -> MaterialTheme.typography.titleLarge
                 compact -> MaterialTheme.typography.bodySmall
                 else -> MaterialTheme.typography.bodyMedium
             },
             fontWeight = if (prominent) FontWeight.Bold else FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = if (centered || prominent) 2 else 1,
+            textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start,
             overflow = TextOverflow.Ellipsis,
         )
     }

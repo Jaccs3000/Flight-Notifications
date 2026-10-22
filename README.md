@@ -26,7 +26,7 @@ Entorno usado: Windows, JDK 21 para Gradle, bytecode Java 17, Android SDK API 37
 Desde PowerShell en la raíz del proyecto:
 
 ```powershell
-.\scripts\Build-Apk.ps1 -OutputDirectory 'outputs\release-1.0.15'
+.\scripts\Build-Apk.ps1 -OutputDirectory 'outputs\release-1.0.20'
 ```
 
 El script ejecuta pruebas unitarias y Lint debug/release, compila ambos APK, firma release con la clave estable protegida fuera del proyecto y calcula SHA-256. El directorio indicado evita escribir la entrega en Google Drive.
@@ -40,7 +40,7 @@ Pruebas instrumentadas con un emulador/dispositivo conectado:
 
 ## Instalar y configurar
 
-1. Para uso habitual instala `flight-notifications-1.0.15-release.apk` desde `outputs\release-1.0.15` en Android 13 o posterior. Autoriza a Android a instalar desde la aplicación con la que abras el archivo. El APK debug sirve para desarrollo y usa otro identificador de aplicación/datos.
+1. Para uso habitual instala `flight-notifications-1.0.20-release.apk` desde `outputs\release-1.0.20` en Android 13 o posterior. Autoriza a Android a instalar desde la aplicación con la que abras el archivo. El APK debug sirve para desarrollo y usa otro identificador de aplicación/datos.
 2. Abre **Configuración**, ingresa la API key de SerpApi en el teléfono y pulsa **Guardar cifrada**. La clave se almacena usando Android Keystore y no se debe compartir en chats, logs o archivos del proyecto.
 3. Pulsa **Probar conexión** para consultar `GET /account.json`. Esta comprobación no inicia GET de vuelos.
 4. La instalación nueva incluye una alerta de ejemplo CTG–CLO para marzo de 2027, pausada. Puedes editarla o borrarla; no vuelve a aparecer al volver a abrir la app.
@@ -51,9 +51,9 @@ Una tarifa se presenta como total observado sólo si los datos asociados de ida 
 
 ## Actualizaciones, firma y artefactos
 
-La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=17` y `versionName=1.0.15`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
+La release actual usa `applicationId=com.flightnotifications.app`, `versionCode=22` y `versionName=1.0.20`. Las actualizaciones release deben conservar la misma clave privada de firma, el identificador y la base de datos para preservar alertas, cuota y registros de avisos. La clave vive en `%USERPROFILE%\.android\flight-notifications-signing\`; `scripts\Backup-ReleaseSigning.ps1` permite crear una copia protegida. No se guarda la contraseña en este repositorio.
 
-La release 1.0.15 firmada está en `outputs\release-1.0.15\`; esta entrega se guarda localmente y no se copia a Google Drive.
+La release 1.0.20 firmada está en `outputs\release-1.0.20\`; esta entrega se guarda localmente y no se copia a Google Drive. Su SHA-256 es `46273d9f97225fde0c87c5fd7c1535e68c179d67aa0cf447ea81db35ae809389`.
 
 ## Privacidad y alcance
 

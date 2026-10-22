@@ -1,25 +1,25 @@
 # Informe de implementación y aceptación V1
 
-**Fecha:** 21 de octubre de 2026 (COT). Este informe conserva la evidencia histórica y añade el estado vigente de V1.0.15.
+**Fecha:** 22 de octubre de 2026 (COT). Este informe conserva la evidencia histórica y añade el estado vigente de V1.0.20.
 **Proyecto:** `C:\Flight-Notifications-main`  
 **Especificación:** [REQUIREMENTS.md](../REQUIREMENTS.md) V1.4; [plan técnico](../PLAN_APP_DEFINITIVA.md) v1.2.  
-**Estado actual:** APK release V1.0.15 generado localmente. Usa `versionCode=17`, conserva el certificado estable y tiene firma v2 verificada. `assembleRelease` y `lintVitalRelease` finalizaron correctamente. Pasaron 2/2 pruebas instrumentadas de filtros y navegación inferior en el emulador API 36; también se instalaron y recorrieron los tres filtros y destinos en la release.
+**Estado actual:** APK release V1.0.20 generado localmente. Usa `versionCode=22`, conserva el certificado estable y tiene firma v2 verificada. `assembleRelease` finalizó correctamente. Pasaron 11 pruebas instrumentadas enfocadas en la tarjeta y sus variantes de tamaño y contenido; la app se instaló y abrió en el emulador.
 
-## Entrega vigente: V1.0.15
+## Entrega vigente: V1.0.20
 
-Los botones de estado de las alertas se compactaron a una sola fila: nombre a la izquierda y cantidad a la derecha, sin icono. El alto mínimo es 50 dp. Los fondos son pasteles para los tres estados; un borde sutil identifica la selección. Activas (verde) sigue seleccionada inicialmente, seguida de Inactivas (ámbar) y Todas (azul). La navegación inferior mantiene Alertas (turquesa), Actividad (azul) y Ajustes (violeta). La prueba de interfaz comprobó selección exclusiva, etiquetas y contadores de tres cifras en 320 dp. En el emulador, la release se instaló sobre la anterior y se probaron los filtros y la navegación.
+La tarjeta quedó organizada según el boceto: cabecera de aerolínea, interruptor y menú; ruta y fechas a la izquierda; oferta, estado verificado y tipo de vuelo a la derecha; presupuesto, frecuencia y acciones en filas inferiores. En anchos menores, los grupos se apilan para mantener todos los textos visibles. Se conservó el área táctil accesible del interruptor.
 
-La release firmada pasó `assembleRelease` y `lintVitalRelease`. `apksigner` verificó la firma v2 y el certificado SHA-256 estable `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`. No se iniciaron búsquedas ni se consumió cuota de SerpApi.
+Las pruebas instrumentadas verificaron alineación, ausencia de recortes, disposición compacta, mezcla de aerolíneas, oferta pendiente y callbacks independientes de las acciones. Pasaron 11 pruebas. No se iniciaron búsquedas reales ni se consumió cuota de SerpApi.
+
+La release firmada pasó `assembleRelease` y `lintVitalRelease`. `apksigner` verificó firma v2 y el certificado SHA-256 estable `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`.
 
 | Variante | Identificador | Versión | Tamaño | SHA-256 |
 |---|---|---:|---:|---|
-| Release | `com.flightnotifications.app` | 1.0.15 (17) | 3.433.570 bytes | `ffd403fc7de721253756150e776d767dd869faff22d41d740b775b4a06c242d3` |
+| Release | `com.flightnotifications.app` | 1.0.20 (22) | 3.449.954 bytes | `46273d9f97225fde0c87c5fd7c1535e68c179d67aa0cf447ea81db35ae809389` |
 
-- [APK release 1.0.15](../outputs/release-1.0.15/flight-notifications-1.0.15-release.apk)
-- [Hash del APK](../outputs/release-1.0.15/SHA256SUMS.txt)
-- [Filtros compactos en release](../outputs/release-1.0.15/release-home.png)
-- [Release con filtro Inactivas](../outputs/release-1.0.15/release-filter-inactive.png)
-- [Release con filtro Todas](../outputs/release-1.0.15/release-filter-all.png)
+- [APK release 1.0.20](../outputs/release-1.0.20/flight-notifications-1.0.20-release.apk)
+- [Hash del APK](../outputs/release-1.0.20/SHA256SUMS.txt)
+- [Captura de la tarjeta](../outputs/card-layout/qa-card-353.png)
 
 ## Evidencia histórica V1.0.14
 

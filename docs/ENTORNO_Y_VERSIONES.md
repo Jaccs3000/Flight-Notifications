@@ -1,10 +1,10 @@
 # Entorno y versiones
 
-## Entrega vigente: V1.0.15
+## Entrega vigente: V1.0.20
 
-La release actual está en `outputs/release-1.0.15/flight-notifications-1.0.15-release.apk`, paquete `com.flightnotifications.app`, `versionCode=17`, firmada con la clave RSA 3072 estable. `apksigner verify` confirmó firma v2 y el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`; `aapt` confirmó `versionName=1.0.15`. El APK pesa 3.433.570 bytes y su SHA-256 es `ffd403fc7de721253756150e776d767dd869faff22d41d740b775b4a06c242d3`. `assembleRelease` y `lintVitalRelease` finalizaron correctamente. Pasaron 2/2 pruebas instrumentadas de filtros y navegación inferior en Android API 36. Se instaló la release sobre la anterior y se comprobaron los filtros compactos y los tres destinos de la barra inferior. El APK está en `outputs/release-1.0.15/` y no se copió a Google Drive.
+La release actual está en `outputs/release-1.0.20/flight-notifications-1.0.20-release.apk`, paquete `com.flightnotifications.app`, `versionCode=22`, firmada con la clave RSA 3072 estable. `apksigner verify` confirmó firma v2 y el certificado SHA-256 `c08db5c00f3a02e14d656b9143c3479949a8963c39584a8e2c8e0472298d6351`; `aapt` confirmó `versionName=1.0.20`. El APK pesa 3.449.954 bytes y su SHA-256 es `46273d9f97225fde0c87c5fd7c1535e68c179d67aa0cf447ea81db35ae809389`. `assembleRelease` finalizó correctamente. Pasaron 11 pruebas instrumentadas enfocadas en la tarjeta y sus variantes de tamaño y contenido. La app se instaló y abrió en el emulador. El APK está en `outputs/release-1.0.20/` y no se copia a Google Drive.
 
-Los filtros «Activas», «Inactivas» y «Todas» usan una sola fila compacta con el nombre a la izquierda y el contador a la derecha, sin iconos. Sus fondos son pasteles con bordes suaves para señalar selección. La barra inferior conserva iconos en turquesa, azul y violeta.
+La tarjeta de alerta sigue el boceto: aerolínea en la franja superior junto al interruptor y menú, ruta y fechas a la izquierda, y tarifa, verificación y tipo de vuelo en una columna a la derecha. En pantallas estrechas el contenido se reacomoda para evitar recortes. El cambio de estado de una alerta se guarda sin esperar el bloqueo de las consultas de vuelos; WorkManager se registra fuera del hilo visual.
 
 ## Evidencia histórica: V1.0.14
 

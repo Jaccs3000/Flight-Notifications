@@ -1,6 +1,6 @@
 GUÍA DE PANTALLAS Y FUNCIONAMIENTO
 Aplicación: Alertas de vuelos
-Versión de referencia del código: 1.0.15
+Versión de referencia del código: 1.0.20
 
 Este documento describe las pantallas disponibles en la aplicación, qué muestran y qué acciones puede realizar la persona usuaria. La app vigila tarifas de ida y vuelta para rutas nacionales colombianas. No vende tiquetes ni confirma una compra: muestra precios observados y permite abrir Google Flights para comprobar disponibilidad y condiciones.
 

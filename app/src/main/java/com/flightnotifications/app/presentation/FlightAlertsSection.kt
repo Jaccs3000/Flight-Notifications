@@ -12,14 +12,17 @@ import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -32,6 +35,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -64,9 +70,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -81,6 +92,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -710,6 +722,7 @@ fun FlightAlertsSection(
                     airportCatalog = viewModel.airportCatalog,
                     expired = expired,
                     isRunning = state.runningAlertId == alert.id,
+                    isChangingEnabled = alert.id in state.pendingToggleIds,
                     onOpenDetail = { onOpenDetail(alert.id) },
                     onEdit = { onEditAlert(alert.id) },
                     onDelete = { viewModel.requestDelete(alert.id) },
@@ -781,6 +794,7 @@ internal fun SketchAlertCard(
     airportCatalog: ColombianAirportCatalog,
     expired: Boolean,
     isRunning: Boolean,
+    isChangingEnabled: Boolean = false,
     onOpenDetail: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -801,103 +815,137 @@ internal fun SketchAlertCard(
     val days = runCatching {
         java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(alert.outboundDate), LocalDate.parse(alert.returnDate)) + 1
     }.getOrDefault(0L)
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val valueStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+    val metadataMinWidth = with(density) {
+        maxOf(
+            textMeasurer.measure(AnnotatedString(formatCop(alert.maxTotalCop)), style = valueStyle).size.width,
+            textMeasurer.measure(AnnotatedString("Cada ${alert.frequencyHours} h"), style = valueStyle).size.width,
+        ).toDp()
+    } + 54.dp // Icon, gap and padding; the value remains on one line.
+    val actionMinWidth = with(density) {
+        textMeasurer.measure(AnnotatedString("Ver resultados"), style = MaterialTheme.typography.labelLarge).size.width.toDp()
+    } + 46.dp // Icon, gap and padding; both actions use the same minimum width.
+    val dateText = formatAlertDates(alert.outboundDate, alert.returnDate)
+    val routeStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+    val dateStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+    val offerPrice = result?.lastVerifiedTotalCop
+    val offerLayout = offerPrice?.let { price ->
+        val verificationText = if (current) "Verificado" else "Anterior"
+        val directText = if (alert.directOnly) "Vuelos directos" else "Incluye escalas"
+        val leftMinimumWidth = with(density) {
+            maxOf(
+                textMeasurer.measure(AnnotatedString("${alert.originIata} → ${alert.destinationIata}"), style = routeStyle).size.width,
+                textMeasurer.measure(AnnotatedString(dateText), style = dateStyle).size.width,
+            ).toDp()
+        } + 46.dp // Left icon and space before its text column.
+        val rightMinimumWidth = with(density) {
+            maxOf(
+                textMeasurer.measure(AnnotatedString(formatCop(price)), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)).size.width.toDp() +
+                    textMeasurer.measure(AnnotatedString("COP"), style = MaterialTheme.typography.bodySmall).size.width.toDp() + 4.dp,
+                textMeasurer.measure(AnnotatedString(verificationText), style = MaterialTheme.typography.labelLarge).size.width.toDp() + 37.dp,
+                textMeasurer.measure(AnnotatedString(directText), style = MaterialTheme.typography.bodySmall).size.width.toDp() + 24.dp,
+            )
+        }
+        leftMinimumWidth to rightMinimumWidth
+    }
     Card(
         shape = MaterialTheme.shapes.large,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.65f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                Surface(color = FlightAppColors.paleBlue, shape = CircleShape, modifier = Modifier.size(38.dp)) {
-                    Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Flight, null, modifier = Modifier.size(21.dp), tint = Color(0xFF1767C9)) }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("${alert.originIata} → ${alert.destinationIata}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        airportFullName(alert.originIata, airportCatalog),
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp),
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        airportFullName(alert.destinationIata, airportCatalog),
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp),
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Switch(checked = active, onCheckedChange = onToggle, enabled = !isRunning && !expired, modifier = Modifier.testTag("toggle-alert-${alert.id}").sizeIn(minWidth = 48.dp, minHeight = 48.dp))
-                }
-                Box {
-                    IconButton(onClick = { menuExpanded = true }, modifier = Modifier.sizeIn(minWidth = 44.dp, minHeight = 48.dp)) {
-                        AppIcon(AppIcon.More, "Más opciones", tint = MaterialTheme.colorScheme.onSurface)
+        Column(Modifier.fillMaxWidth().padding(12.dp).testTag("alert-card-${alert.id}"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Surface(color = FlightAppColors.paleBlue, shape = MaterialTheme.shapes.large) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (carriers.isNotEmpty()) {
+                        AirlineIdentity(
+                            carriers.joinToString(" / "),
+                            modifier = Modifier.weight(1f).testTag("alert-airline-${alert.id}"),
+                            prominent = true,
+                            logoSize = if (carriers.size > 1) 36.dp else 48.dp,
+                        )
+                    } else {
+                        Row(
+                            Modifier.weight(1f).testTag("alert-airline-${alert.id}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Surface(color = Color.White, shape = CircleShape, modifier = Modifier.size(38.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    AppIcon(AppIcon.Flight, null, modifier = Modifier.size(21.dp), tint = Color(0xFF1767C9))
+                                }
+                            }
+                            Text(
+                                "Por confirmar",
+                                color = MaterialTheme.colorScheme.secondary,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
                     }
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Editar alerta") },
-                            leadingIcon = { AppIcon(AppIcon.Edit, null, tint = MaterialTheme.colorScheme.secondary) },
-                            onClick = { menuExpanded = false; onEdit() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Eliminar alerta") },
-                            leadingIcon = { AppIcon(AppIcon.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                            onClick = { menuExpanded = false; onDelete() },
-                        )
+                    CompactAlertSwitch(
+                        checked = active,
+                        onCheckedChange = onToggle,
+                        enabled = !isRunning && !isChangingEnabled && !expired,
+                        modifier = Modifier.testTag("toggle-alert-${alert.id}"),
+                    )
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }, modifier = Modifier.sizeIn(minWidth = 44.dp, minHeight = 48.dp).testTag("alert-menu-${alert.id}")) {
+                            AppIcon(AppIcon.More, "Más opciones", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Editar alerta") },
+                                leadingIcon = { AppIcon(AppIcon.Edit, null, tint = MaterialTheme.colorScheme.secondary) },
+                                onClick = { menuExpanded = false; onEdit() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Eliminar alerta") },
+                                leadingIcon = { AppIcon(AppIcon.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = { menuExpanded = false; onDelete() },
+                            )
+                        }
                     }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Surface(color = Color(0xFFF1EBFD), shape = CircleShape, modifier = Modifier.size(36.dp)) {
-                            Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Calendar, null, modifier = Modifier.size(19.dp), tint = Color(0xFF6D42C6)) }
-                        }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(formatAlertDates(alert.outboundDate, alert.returnDate), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            Text("$days días · 1 adulto", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                    if (result?.lastVerifiedTotalCop != null) {
-                        if (carriers.isNotEmpty()) AirlineIdentity(carriers.joinToString(" / "), Modifier.fillMaxWidth(), compact = true, prominent = true)
-                        else Text("Tarifa de ida y vuelta", modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary)
-                        Text(
-                            when {
-                                !current -> "Última tarifa observada · requiere nueva verificación"
-                                selectedOffer?.let { it.outbound.size == 1 && it.returning.size == 1 } == true -> "Vuelos directos"
-                                selectedOffer != null -> "Escalas permitidas"
-                                else -> "COP · ida y vuelta · 1 adulto"
-                            },
-                            color = MaterialTheme.colorScheme.secondary,
-                            style = MaterialTheme.typography.bodySmall,
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val splitOffer = offerLayout != null && maxWidth >= offerLayout.first + offerLayout.second + 17.dp
+                if (splitOffer) {
+                    Row(
+                        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AlertRouteAndDates(
+                            alert = alert,
+                            airportCatalog = airportCatalog,
+                            dateText = dateText,
+                            days = days,
+                            modifier = Modifier.weight(offerLayout.first.value),
+                        )
+                        Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
+                        AlertOfferSummary(
+                            price = offerPrice,
+                            current = current,
+                            directOnly = alert.directOnly,
+                            modifier = Modifier.weight(offerLayout.second.value),
+                            alertId = alert.id,
                         )
                     }
-                }
-                result?.lastVerifiedTotalCop?.let { price ->
-                    Column(
-                        modifier = Modifier.fillMaxHeight(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(formatCop(price), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            Text("COP", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-                        }
-                        Surface(
-                            color = if (current) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                            shape = MaterialTheme.shapes.medium,
-                        ) {
-                            Row(Modifier.padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                AppIcon(if (current) AppIcon.Verified else AppIcon.Info, null, modifier = Modifier.size(16.dp), tint = if (current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary)
-                                Text(if (current) "Verificado" else "Anterior", color = if (current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                            }
+                } else {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        AlertRouteAndDates(alert, airportCatalog, dateText, days, Modifier.fillMaxWidth())
+                        offerPrice?.let { price ->
+                            AlertOfferSummary(price, current, alert.directOnly, Modifier.fillMaxWidth(), alert.id)
                         }
                     }
                 }
@@ -911,44 +959,215 @@ internal fun SketchAlertCard(
                 }
             }
             HorizontalDivider()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Surface(Modifier.weight(1f), color = FlightAppColors.mintHeader, shape = MaterialTheme.shapes.medium) {
-                    Row(Modifier.padding(7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Surface(color = FlightAppColors.mintIcon, shape = CircleShape, modifier = Modifier.size(30.dp)) {
+            AlertCardPair(metadataMinWidth, first = { itemModifier ->
+                Surface(itemModifier.testTag("alert-budget-${alert.id}"), color = FlightAppColors.mintHeader, shape = MaterialTheme.shapes.medium) {
+                    Row(Modifier.height(IntrinsicSize.Min).padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(color = FlightAppColors.mintIcon, shape = CircleShape, modifier = Modifier.size(28.dp)) {
                             Box(contentAlignment = Alignment.Center) { Text("$", color = FlightAppColors.tealDark, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                         }
-                        Column {
-                            Text("Tu máximo", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-                            Text(formatCop(alert.maxTotalCop), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+                            Text("Tu máximo", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
+                            Text(formatCop(alert.maxTotalCop), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
-                Surface(Modifier.weight(1f), color = FlightAppColors.paleYellow, shape = MaterialTheme.shapes.medium) {
-                    Row(Modifier.padding(7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Surface(color = Color(0xFFFFE6A8), shape = CircleShape, modifier = Modifier.size(30.dp)) {
+            }, second = { itemModifier ->
+                Surface(itemModifier.testTag("alert-frequency-${alert.id}"), color = FlightAppColors.paleYellow, shape = MaterialTheme.shapes.medium) {
+                    Row(Modifier.height(IntrinsicSize.Min).padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(color = Color(0xFFFFE6A8), shape = CircleShape, modifier = Modifier.size(28.dp)) {
                             Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Clock, null, modifier = Modifier.size(19.dp), tint = Color(0xFF936A10)) }
                         }
-                        Column {
-                            Text("Revisión automática", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-                            Text("Cada ${alert.frequencyHours} h", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+                            Text("Revisión automática", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
+                            Text("Cada ${alert.frequencyHours} h", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
-            }
+            })
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
                 Text(result?.let { "Última revisión: ${formatShortLocal(it.lastAttemptAt)}" } ?: "Sin revisiones", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onSearch, enabled = !isRunning, modifier = Modifier.weight(1f).primaryButtonTarget(), shape = CircleShape) {
-                    AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(18.dp))
-                    Text(if (isRunning) "Buscando…" else "Revisar")
+            AlertCardPair(actionMinWidth, first = { itemModifier ->
+                OutlinedButton(
+                    onClick = onSearch,
+                    enabled = !isRunning,
+                    modifier = itemModifier.primaryButtonTarget().testTag("alert-review-${alert.id}"),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, Color(0xFF1767C9)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1767C9)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                ) {
+                    AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(18.dp), tint = Color(0xFF1767C9))
+                    Text(if (isRunning) "Buscando…" else "Revisar", modifier = Modifier.padding(start = 4.dp), maxLines = 1, softWrap = false)
                 }
-                Button(onClick = onOpenDetail, modifier = Modifier.weight(1f).primaryButtonTarget(), shape = CircleShape) {
-                    Text("Ver resultados")
+            }, second = { itemModifier ->
+                Button(onClick = onOpenDetail, modifier = itemModifier.primaryButtonTarget().testTag("alert-results-${alert.id}"), shape = CircleShape, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)) {
+                    Text("Ver resultados", modifier = Modifier.padding(end = 4.dp), maxLines = 1, softWrap = false)
                     AppIcon(AppIcon.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimary)
                 }
+            })
+        }
+    }
+}
+
+@Composable
+private fun AlertRouteAndDates(
+    alert: FlightAlertEntity,
+    airportCatalog: ColombianAirportCatalog,
+    dateText: String,
+    days: Long,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.testTag("alert-details-${alert.id}"),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Surface(color = FlightAppColors.paleBlue, shape = CircleShape, modifier = Modifier.size(38.dp).testTag("alert-route-icon-${alert.id}")) {
+                Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Flight, null, modifier = Modifier.size(21.dp), tint = Color(0xFF1767C9)) }
             }
+            Column(Modifier.weight(1f).testTag("alert-route-${alert.id}"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("${alert.originIata} → ${alert.destinationIata}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    airportFullName(alert.originIata, airportCatalog),
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp),
+                )
+                Text(
+                    airportFullName(alert.destinationIata, airportCatalog),
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().testTag("alert-dates-${alert.id}"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Surface(color = Color(0xFFF1EBFD), shape = CircleShape, modifier = Modifier.size(38.dp).testTag("alert-date-icon-${alert.id}")) {
+                Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Calendar, null, modifier = Modifier.size(19.dp), tint = Color(0xFF6D42C6)) }
+            }
+            Column(Modifier.weight(1f).testTag("alert-date-text-${alert.id}"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(dateText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("$days días · 1 adulto", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlertOfferSummary(
+    price: Long,
+    current: Boolean,
+    directOnly: Boolean,
+    modifier: Modifier = Modifier,
+    alertId: String,
+) {
+    Column(
+        modifier = modifier.testTag("alert-offer-$alertId"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.testTag("alert-price-$alertId"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(formatCop(price), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text("COP", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+        }
+        Surface(
+            modifier = Modifier.testTag("alert-verification-$alertId"),
+            color = if (current) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                AppIcon(if (current) AppIcon.Verified else AppIcon.Info, null, modifier = Modifier.size(16.dp), tint = if (current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary)
+                Text(if (current) "Verificado" else "Anterior", color = if (current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        Row(
+            modifier = Modifier.testTag("alert-direct-$alertId"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            AppIcon(AppIcon.Flight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+            Text(
+                if (directOnly) "Vuelos directos" else "Incluye escalas",
+                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlertCardPair(
+    minimumItemWidth: Dp,
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth >= minimumItemWidth * 2 + 8.dp) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                first(Modifier.weight(1f).fillMaxHeight())
+                second(Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                first(Modifier.fillMaxWidth())
+                second(Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+internal fun CompactAlertSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val trackColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (checked) Color(0xFF008F91) else Color(0xFFD9E0E6),
+        label = "alert-switch-track",
+    )
+    val thumbOffset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (checked) 18.dp else 0.dp,
+        label = "alert-switch-thumb",
+    )
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = 3.dp)
+                .width(42.dp)
+                .height(24.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(if (enabled) trackColor else trackColor.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(start = 2.dp)
+                    .offset(x = thumbOffset)
+                    .size(20.dp)
+                    .shadow(1.dp, CircleShape)
+                    .background(Color.White, CircleShape),
+            ) {}
         }
     }
 }

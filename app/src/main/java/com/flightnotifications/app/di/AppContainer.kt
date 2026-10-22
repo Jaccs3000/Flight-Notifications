@@ -35,6 +35,8 @@ class AppContainer(context: Context) {
     val flightAlertDao: FlightAlertDao = database.flightAlertDao()
 
     val executionMutex = Mutex()
+    /** Serializes local alert edits without waiting for network requests guarded by executionMutex. */
+    val alertMutationMutex = Mutex()
     val accountDiagnosticLog = DiagnosticLog(File(applicationContext.noBackupFilesDir, "serpapi-account-diagnostics.log"))
     val flightDiagnosticLog = DiagnosticLog(File(applicationContext.noBackupFilesDir, "serpapi-flight-diagnostics.log"))
     val credentialStore: CredentialStore = KeystoreCredentialStore(applicationContext.noBackupFilesDir)

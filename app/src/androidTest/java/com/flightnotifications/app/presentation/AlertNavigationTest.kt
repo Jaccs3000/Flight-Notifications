@@ -14,8 +14,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -23,6 +26,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -80,6 +84,27 @@ class AlertNavigationTest {
         compose.onNodeWithTag("nav-SETTINGS").performClick().assertIsSelected()
         compose.onNodeWithTag("nav-ACTIVITY").assertIsNotSelected()
         screenshot("qa-navigation-settings.png")
+    }
+
+    @Test
+    fun compactAlertSwitchHandlesRepeatedActivationAndPauseWithAFullTouchTarget() {
+        compose.setContent {
+            var enabled by remember { mutableStateOf(false) }
+            FlightProbeTheme {
+                CompactAlertSwitch(
+                    checked = enabled,
+                    onCheckedChange = { enabled = it },
+                    modifier = Modifier.testTag("compact-alert-switch"),
+                )
+            }
+        }
+
+        val switch = compose.onNodeWithTag("compact-alert-switch")
+        switch.assertIsOff().assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+        repeat(40) { iteration ->
+            switch.performClick()
+            if (iteration % 2 == 0) switch.assertIsOn() else switch.assertIsOff()
+        }
     }
 
     private fun screenshot(name: String) {

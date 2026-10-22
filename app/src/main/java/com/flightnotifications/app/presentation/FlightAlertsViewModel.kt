@@ -40,6 +40,7 @@ data class FlightAlertsUiState(
     val deletingAlertId: String? = null,
     val showClearNotificationsConfirmation: Boolean = false,
     val runningAlertId: String? = null,
+    val pendingToggleIds: Set<String> = emptySet(),
     val message: String? = null,
     val error: String? = null,
     val schedulingStatus: String = "Leyendo estado de programación…",
@@ -64,8 +65,10 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                 mutableState.value = mutableState.value.copy(notifications = list)
             }
         }
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val status = container.alertWorkScheduler.scheduleStatus()
+        viewModelScope.launch {
+            val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                container.alertWorkScheduler.scheduleStatus()
+            }
             mutableState.value = mutableState.value.copy(schedulingStatus = status)
         }
     }
@@ -74,7 +77,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
         validate(input)?.let { error -> mutableState.value = mutableState.value.copy(error = error, message = null); return }
         viewModelScope.launch {
             runCatching {
-                container.executionMutex.withLock {
+                container.alertMutationMutex.withLock {
                     val existing = input.id?.let { container.flightAlertRepository.find(it) }
                     val requestedStartAt = nextScheduledStartMillis(input.startTime)
                     val candidate = if (existing == null) {
@@ -120,7 +123,6 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 mutableState.value = mutableState.value.copy(message = message, error = null)
                 container.flightDiagnosticLog.record("ui_action alert_saved alert_id=${saved.id.take(8)} criteria_version=${saved.criteriaVersion} policy_version=${saved.notificationPolicyVersion}")
-                container.alertWorkScheduler.ensureScheduled()
                 refreshSchedule()
                 onSaved()
             }.onFailure {
@@ -130,24 +132,38 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setEnabled(id: String, enabled: Boolean) {
+        if (id in mutableState.value.pendingToggleIds) return
+        mutableState.value = mutableState.value.copy(
+            pendingToggleIds = mutableState.value.pendingToggleIds + id,
+            error = null,
+            message = null,
+        )
         viewModelScope.launch {
-            val changed = container.executionMutex.withLock {
-                val alert = container.flightAlertRepository.find(id) ?: return@withLock false
-                if (enabled && LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))) {
-                    mutableState.value = mutableState.value.copy(error = "La fecha de ida ya venció; edita la alerta antes de activarla.", message = null)
-                    return@withLock false
+            try {
+                val changed = container.alertMutationMutex.withLock {
+                    val alert = container.flightAlertRepository.find(id) ?: return@withLock false
+                    if (enabled && LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))) {
+                        mutableState.value = mutableState.value.copy(error = "La fecha de ida ya venció; edita la alerta antes de activarla.", message = null)
+                        return@withLock false
+                    }
+                    container.flightAlertRepository.setEnabled(id, enabled)
+                    true
                 }
-                container.flightAlertRepository.setEnabled(id, enabled)
-                true
+                if (!changed) return@launch
+                mutableState.value = mutableState.value.copy(
+                    message = if (enabled) "Alerta activada. Android realizará las revisiones según la disponibilidad del sistema." else "Alerta pausada.",
+                    error = null,
+                )
+                container.flightDiagnosticLog.record("ui_action alert_enabled_changed alert_id=${id.take(8)} enabled=$enabled")
+                refreshSchedule()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                container.flightDiagnosticLog.record("ui_action alert_enabled_change_failed alert_id=${id.take(8)} enabled=$enabled cause=${failure.javaClass.simpleName}")
+                mutableState.value = mutableState.value.copy(error = "No fue posible cambiar el estado de la alerta. Inténtalo de nuevo.", message = null)
+            } finally {
+                mutableState.value = mutableState.value.copy(pendingToggleIds = mutableState.value.pendingToggleIds - id)
             }
-            if (!changed) return@launch
-            mutableState.value = mutableState.value.copy(
-                message = if (enabled) "Alerta activada. Android realizará las revisiones según la disponibilidad del sistema." else "Alerta pausada.",
-                error = null,
-            )
-            container.flightDiagnosticLog.record("ui_action alert_enabled_changed alert_id=${id.take(8)} enabled=$enabled")
-            container.alertWorkScheduler.ensureScheduled()
-            refreshSchedule()
         }
     }
 
@@ -216,7 +232,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
         val id = mutableState.value.deletingAlertId ?: return
         mutableState.value = mutableState.value.copy(deletingAlertId = null)
         viewModelScope.launch {
-            container.executionMutex.withLock { container.flightAlertRepository.remove(id) }
+            container.alertMutationMutex.withLock { container.flightAlertRepository.remove(id) }
             refreshAlertsNow()
             container.flightDiagnosticLog.record("ui_action alert_deleted alert_id=${id.take(8)}")
             mutableState.value = mutableState.value.copy(message = "Alerta eliminada. El presupuesto global de consultas se conserva.", error = null)
@@ -241,11 +257,14 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun checkScheduling() {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            container.alertWorkScheduler.ensureScheduled()
-            val status = container.alertWorkScheduler.scheduleStatus()
+        viewModelScope.launch {
+            val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                container.alertWorkScheduler.ensureScheduled()
+                container.alertWorkScheduler.scheduleStatus().also {
+                    container.flightDiagnosticLog.record("scheduler_diagnostic_check result=${it.replace(Regex("[^A-Za-z0-9 _-]"), " ").take(100)} api_calls=0")
+                }
+            }
             mutableState.value = mutableState.value.copy(schedulingStatus = status)
-            container.flightDiagnosticLog.record("scheduler_diagnostic_check result=${status.replace(Regex("[^A-Za-z0-9 _-]"), " ").take(100)} api_calls=0")
         }
     }
 
@@ -300,8 +319,13 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun refreshSchedule() {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            mutableState.value = mutableState.value.copy(schedulingStatus = container.alertWorkScheduler.scheduleStatus())
+        viewModelScope.launch {
+            val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { container.alertWorkScheduler.ensureScheduled() }
+                    .onFailure { container.flightDiagnosticLog.record("scheduler_registration_failed cause=${it.javaClass.simpleName}") }
+                container.alertWorkScheduler.scheduleStatus()
+            }
+            mutableState.value = mutableState.value.copy(schedulingStatus = status)
         }
     }
 
