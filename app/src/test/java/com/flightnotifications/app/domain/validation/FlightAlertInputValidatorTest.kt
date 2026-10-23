@@ -8,7 +8,7 @@ import java.time.LocalDate
 
 class FlightAlertInputValidatorTest {
     private val today = LocalDate.parse("2026-10-20")
-    private val domesticAirports = setOf("CTG", "CLO", "BOG", "MDE")
+    private val knownAirports = setOf("CTG", "CLO", "BOG", "MDE", "JFK", "LHR", "NRT")
 
     @Test
     fun acceptsMinimumAndMaximumNameLengthsAndEveryApprovedFrequency() {
@@ -34,11 +34,11 @@ class FlightAlertInputValidatorTest {
         assertEquals("El nombre debe tener entre 3 y 80 caracteres.", validate(name = "AB"))
         assertEquals("El nombre debe tener entre 3 y 80 caracteres.", validate(name = "A".repeat(81)))
         assertEquals(
-            "El origen debe ser un aeropuerto colombiano del catálogo local.",
+            "Selecciona un aeropuerto válido del catálogo mundial para el origen.",
             validate(origin = "XXX"),
         )
         assertEquals(
-            "El destino debe ser un aeropuerto colombiano del catálogo local.",
+            "Selecciona un aeropuerto válido del catálogo mundial para el destino.",
             validate(destination = "XXX"),
         )
         assertEquals("El origen y el destino deben ser distintos.", validate(origin = "ctg", destination = "CTG"))
@@ -47,6 +47,49 @@ class FlightAlertInputValidatorTest {
         assertEquals("El máximo total debe ser un valor positivo en COP.", validate(maximum = 0))
         assertEquals("El máximo total debe ser un valor positivo en COP.", validate(maximum = -1))
         assertEquals("Frecuencia no permitida.", validate(frequency = 7))
+    }
+
+    @Test
+    fun acceptsAnInternationalOriginAndDestinationFromTheGlobalCatalog() {
+        assertNull(validate(origin = "JFK", destination = "LHR"))
+        assertNull(validate(origin = "NRT", destination = "CTG"))
+    }
+
+    @Test
+    fun acceptsFlexibleDateWindowsAndRejectsInvalidOrOverBudgetCombinations() {
+        assertNull(
+            validate(
+                flexible = true,
+                outbound = today.plusDays(5),
+                outboundEnd = today.plusDays(6),
+                returning = today.plusDays(7),
+                returnEnd = today.plusDays(8),
+            ),
+        )
+        assertEquals(
+            "El final del rango de ida no puede ser anterior al inicio.",
+            validate(flexible = true, outbound = today.plusDays(5), outboundEnd = today.plusDays(4)),
+        )
+        assertEquals(
+            "El rango debe incluir al menos una combinación con regreso posterior a la ida.",
+            validate(
+                flexible = true,
+                outbound = today.plusDays(5),
+                outboundEnd = today.plusDays(6),
+                returning = today.plusDays(3),
+                returnEnd = today.plusDays(4),
+            ),
+        )
+        assertEquals(
+            "El rango puede incluir hasta 49 combinaciones de fechas. Reduce alguno de los rangos.",
+            validate(
+                flexible = true,
+                outbound = today.plusDays(5),
+                outboundEnd = today.plusDays(12),
+                returning = today.plusDays(13),
+                returnEnd = today.plusDays(20),
+            ),
+        )
     }
 
     private fun validate(
@@ -59,6 +102,9 @@ class FlightAlertInputValidatorTest {
         frequency: Int = 24,
         adults18Plus: Int = 1,
         minors: List<MinorPassenger> = emptyList(),
+        flexible: Boolean = false,
+        outboundEnd: LocalDate = outbound,
+        returnEnd: LocalDate? = returning,
     ) = FlightAlertInputValidator.validate(
         name = name,
         origin = origin,
@@ -68,8 +114,11 @@ class FlightAlertInputValidatorTest {
         maximumCop = maximum,
         frequencyHours = frequency,
         today = today,
-        containsDomesticAirport = { code -> code.trim().uppercase() in domesticAirports },
+        containsAirport = { code -> code.trim().uppercase() in knownAirports },
         adults18Plus = adults18Plus,
         minors = minors,
+        flexibleDateSearch = flexible,
+        outboundDateEnd = outboundEnd,
+        returnDateEnd = returnEnd,
     )
 }

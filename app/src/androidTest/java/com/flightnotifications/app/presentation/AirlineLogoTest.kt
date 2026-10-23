@@ -43,7 +43,7 @@ import com.flightnotifications.app.data.local.FlightAlertResultEntity
 import com.flightnotifications.app.data.repository.AlertWithResult
 import com.flightnotifications.app.domain.model.AlertFlightSegment
 import com.flightnotifications.app.domain.model.VerifiedRoundTripOffer
-import com.flightnotifications.app.domain.validation.ColombianAirportCatalog
+import com.flightnotifications.app.domain.validation.AirportCatalog
 import com.flightnotifications.app.ui.theme.FlightAppColors
 import com.flightnotifications.app.ui.theme.FlightProbeTheme
 import java.io.File
@@ -61,9 +61,21 @@ class AirlineLogoTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
+    fun bundledAirportCatalogIncludesInternationalAirportsAndTimeZones() {
+        val airports = AirportCatalog(context)
+
+        assertTrue(airports.airports.size >= 7_000)
+        assertTrue(airports.containsAirport("JFK"))
+        assertEquals("Europe/London", airports.timeZoneFor("LHR")?.id)
+        assertEquals("Tokyo", airports.find("NRT")?.city)
+        assertTrue(airports.suggestions("tokyo").any { it.iata == "NRT" })
+        assertEquals("JFK", airports.suggestions("jfk").first().iata)
+    }
+
+    @Test
     fun savedVerifiedAlertDisplaysTheJetSmartLogoAndKeepsItsPrice() {
         val item = verifiedAlert()
-        val airports = ColombianAirportCatalog(context)
+        val airports = AirportCatalog(context)
         compose.setContent {
             FlightProbeTheme {
                 Column(Modifier.fillMaxSize().background(FlightAppColors.flightBlue).padding(16.dp)) {
@@ -130,8 +142,8 @@ class AirlineLogoTest {
         renderCard(353, 1f, verifiedAlert())
         screenshot("qa-card-353.png")
         assertCardLayout(directLabel = "Vuelos directos")
-        assertTextFits("Cartagena - Rafael Núñez (CTG)")
-        assertTextFits("Pereira - Matecaña (PEI)")
+        assertTextFits("Rafael Núñez International Airport (CTG) · Colombia")
+        assertTextFits("Matecaña International Airport (PEI) · Colombia")
         assertCardMatchesSketchHeaderAndOfferColumns()
     }
 
@@ -140,6 +152,7 @@ class AirlineLogoTest {
         renderCard(320, 1.3f, verifiedAlert(price = 1_527_640, outboundCarrier = "Avianca", returnCarrier = "LATAM", destination = "CLO"))
         screenshot("qa-card-large-text.png")
         assertCardLayout("$ 1.527.640", "Avianca / LATAM", fontScale = 1.3f)
+        assertNoEllipsizedText("alert-review-meta-text-logo-qa")
         compose.onNodeWithContentDescription("Logo de Avianca").assertIsDisplayed()
         compose.onNodeWithContentDescription("Logo de LATAM").assertIsDisplayed()
     }
@@ -158,7 +171,7 @@ class AirlineLogoTest {
     @Test
     fun rearrangedCardStillDispatchesEachActionToItsOwnCallback() {
         val item = verifiedAlert()
-        val airports = ColombianAirportCatalog(context)
+        val airports = AirportCatalog(context)
         var reviews = 0
         var details = 0
         var edits = 0
@@ -189,7 +202,7 @@ class AirlineLogoTest {
     }
 
     private fun renderCard(widthDp: Int, fontScale: Float, item: AlertWithResult) {
-        val airports = ColombianAirportCatalog(context)
+        val airports = AirportCatalog(context)
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
@@ -225,7 +238,11 @@ class AirlineLogoTest {
         assertTrue("Los horarios deben quedar debajo del precio", price.bottom <= returnTime.top)
         assertEquals(outboundTime.top, returnTime.top, 1f)
         assertTrue("La etiqueta de vuelos debe quedar arriba de Ver resultados", direct.bottom <= bounds("alert-results-logo-qa").top + 1f)
-        assertEquals("Vuelos directos y última revisión deben compartir línea", reviewMeta.center.y, direct.center.y, 1f)
+        if (fontScale <= 1.15f) {
+            assertEquals("Vuelos directos y última revisión deben compartir línea", reviewMeta.center.y, direct.center.y, 1f)
+        } else {
+            assertTrue("Con texto grande, vuelos directos debe ir debajo de la revisión", reviewMeta.bottom <= direct.top)
+        }
         assertTrue("Las fechas y la oferta no deben superponerse", details.right <= offer.left || details.bottom <= offer.top)
         assertTrue("Los horarios deben quedar dentro del panel de la oferta", offer.left <= outboundTime.left && outboundTime.right <= offer.right && offer.left <= returnTime.left && returnTime.right <= offer.right)
         assertEquals(bounds("alert-route-icon-logo-qa").left, bounds("alert-date-icon-logo-qa").left, 1f)
@@ -287,6 +304,15 @@ class AirlineLogoTest {
                     layout.getLineRight(line) - layout.getLineLeft(line) <= layout.size.width + 1f &&
                     layout.getLineBottom(line) <= layout.size.height + 1f
             }
+        })
+    }
+
+    private fun assertNoEllipsizedText(tag: String) {
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithTag(tag, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue("El texto $tag debe estar completo y sin puntos suspensivos", layouts.isNotEmpty() && layouts.all { layout ->
+            !layout.multiParagraph.didExceedMaxLines && (0 until layout.lineCount).none(layout::isLineEllipsized)
         })
     }
 

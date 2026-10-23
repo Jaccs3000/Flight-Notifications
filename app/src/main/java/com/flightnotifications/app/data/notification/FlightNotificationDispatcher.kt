@@ -33,6 +33,7 @@ enum class DispatchStatus { SENT, NO_ELIGIBLE_OFFER, NOTIFICATION_PERMISSION_MIS
 class FlightNotificationDispatcher(
     private val context: Context,
     private val outboxStore: NotificationOutboxStore,
+    private val airportTimeZoneFor: (String) -> ZoneId? = { null },
 ) {
     private val manager = context.getSystemService(NotificationManager::class.java)
     private val deliveryCoordinator = NotificationDeliveryCoordinator(outboxStore, NotificationPublisher(::publish))
@@ -56,13 +57,16 @@ class FlightNotificationDispatcher(
         outcome: AlertSearchResult,
         repository: FlightAlertRepository,
     ): DispatchStatus {
-        if (!alert.enabled || LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))) return DispatchStatus.ALERT_INACTIVE
+        val originZone = airportTimeZoneFor(alert.originIata) ?: COLOMBIA_ZONE
+        val finalOutboundDate = if (alert.flexibleDateSearch) alert.outboundDateEnd.ifBlank { alert.outboundDate } else alert.outboundDate
+        if (!alert.enabled || LocalDate.now(originZone).isAfter(LocalDate.parse(finalOutboundDate))) return DispatchStatus.ALERT_INACTIVE
         if (!notificationsAllowed()) return DispatchStatus.NOTIFICATION_PERMISSION_MISSING
         val eligible = mutableListOf<OfferNotificationPolicy.EligibleOffer<VerifiedRoundTripOffer>>()
         for (offer in outcome.offers) {
             val departure = offer.outbound.firstOrNull()?.departureLocal?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() } ?: continue
-            val today = LocalDate.now(COLOMBIA_ZONE)
-            if (today.isAfter(departure.toLocalDate()) || (today == departure.toLocalDate() && !departure.isAfter(LocalDateTime.now(COLOMBIA_ZONE)))) continue
+            val today = LocalDate.now(originZone)
+            if (today.isAfter(departure.toLocalDate()) ||
+                (today == departure.toLocalDate() && !departure.isAfter(LocalDateTime.now(originZone)))) continue
             if (OfferNotificationPolicy.isEligible(offer.totalCop, alert.maxTotalCop)) {
                 eligible += OfferNotificationPolicy.EligibleOffer(offer, offer.totalCop)
             }
@@ -73,13 +77,17 @@ class FlightNotificationDispatcher(
         if (current.criteriaVersion != alert.criteriaVersion || current.notificationPolicyVersion != alert.notificationPolicyVersion ||
             current.originIata != alert.originIata || current.destinationIata != alert.destinationIata ||
             current.outboundDate != alert.outboundDate || current.returnDate != alert.returnDate || current.directOnly != alert.directOnly ||
+            current.flexibleDateSearch != alert.flexibleDateSearch || current.outboundDateEnd != alert.outboundDateEnd || current.returnDateEnd != alert.returnDateEnd ||
             current.adults18Plus != alert.adults18Plus || current.minorPassengersJson != alert.minorPassengersJson ||
             current.maxTotalCop != alert.maxTotalCop || !current.enabled
         ) return DispatchStatus.STALE_CRITERIA
 
         val returnTrip = alert.returnDate.isNotBlank()
         val arrow = if (returnTrip) "↔" else "→"
-        val dates = if (returnTrip) "${alert.outboundDate} / ${alert.returnDate}" else alert.outboundDate
+        val dates = listOfNotNull(
+            selected.outbound.firstOrNull()?.departureLocal?.take(10),
+            selected.returning.firstOrNull()?.departureLocal?.take(10),
+        ).joinToString(" / ").ifBlank { if (returnTrip) "${alert.outboundDate} / ${alert.returnDate}" else alert.outboundDate }
         val passengers = PassengerSelection.summary(
             alert.adults18Plus,
             runCatching { Json.decodeFromString<List<MinorPassenger>>(alert.minorPassengersJson) }.getOrDefault(emptyList()),
@@ -118,10 +126,11 @@ class FlightNotificationDispatcher(
         }
         return deliveryCoordinator.retryPending { pending ->
             val current = repository.find(pending.alertId)
+            val originZone = current?.let { airportTimeZoneFor(it.originIata) } ?: COLOMBIA_ZONE
             current != null && current.enabled &&
                 current.criteriaVersion == pending.criteriaVersion &&
                 current.notificationPolicyVersion == pending.notificationPolicyVersion &&
-                !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(current.outboundDate))
+                !LocalDate.now(originZone).isAfter(LocalDate.parse(if (current.flexibleDateSearch) current.outboundDateEnd.ifBlank { current.outboundDate } else current.outboundDate))
         }
     }
 

@@ -5,18 +5,14 @@ import org.junit.Test
 
 class AutomaticReviewPolicyTest {
     @Test
-    fun scheduledSearchRequiresDueAlertsAndNotificationPermission() {
+    fun scheduledSearchRequiresDueAlertsButNotNotificationPermission() {
         assertEquals(
             AutomaticReviewPolicy.Decision.NO_DUE_ALERTS,
-            AutomaticReviewPolicy.decide(dueAlertCount = 0, notificationsAllowed = false),
-        )
-        assertEquals(
-            AutomaticReviewPolicy.Decision.NOTIFICATIONS_BLOCKED,
-            AutomaticReviewPolicy.decide(dueAlertCount = 1, notificationsAllowed = false),
+            AutomaticReviewPolicy.decide(dueAlertCount = 0),
         )
         assertEquals(
             AutomaticReviewPolicy.Decision.RUN,
-            AutomaticReviewPolicy.decide(dueAlertCount = 1, notificationsAllowed = true),
+            AutomaticReviewPolicy.decide(dueAlertCount = 1),
         )
     }
 }

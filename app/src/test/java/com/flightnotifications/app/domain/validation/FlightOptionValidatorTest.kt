@@ -12,6 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class FlightOptionValidatorTest {
     private val parser = SerpApiJsonParser()
@@ -98,6 +99,24 @@ class FlightOptionValidatorTest {
         assertTrue(FlightOptionValidator.returnAfterOutbound(outbound, laterReturn))
         assertFalse(FlightOptionValidator.returnAfterOutbound(outbound, equalInstantReturn))
         assertFalse(FlightOptionValidator.returnAfterOutbound(outbound, earlierReturn))
+    }
+
+    @Test
+    fun acceptsAFlightThatArrivesOnThePreviousLocalDateAfterCrossingTimeZones() {
+        val internationalCriteria = criteria.copy(origin = "SYD", destination = "LAX", outboundDate = LocalDate.parse("2027-03-25"))
+        val internationalFlight = option(segment("SYD", "2027-03-25T00:00", "LAX", "2027-03-24T23:00"))
+        val zones = mapOf("SYD" to ZoneId.of("Australia/Sydney"), "LAX" to ZoneId.of("America/Los_Angeles"))
+
+        assertTrue(FlightOptionValidator.isOutbound(internationalFlight, internationalCriteria, zones::get))
+    }
+
+    @Test
+    fun rejectsAnInternationalFlightWhoseArrivalInstantPrecedesItsDeparture() {
+        val internationalCriteria = criteria.copy(origin = "SYD", destination = "LAX", outboundDate = LocalDate.parse("2027-03-25"))
+        val impossibleFlight = option(segment("SYD", "2027-03-25T00:00", "LAX", "2027-03-24T05:00"))
+        val zones = mapOf("SYD" to ZoneId.of("Australia/Sydney"), "LAX" to ZoneId.of("America/Los_Angeles"))
+
+        assertFalse(FlightOptionValidator.isOutbound(impossibleFlight, internationalCriteria, zones::get))
     }
 
     private fun option(vararg segments: FlightSegment) = FlightOption(

@@ -1,0 +1,805 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 10,
+    "identityHash": "e232ef273799a9abfad2353ed1dc56f4",
+    "entities": [
+      {
+        "tableName": "flight_request_reservations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `runId` TEXT NOT NULL, `stage` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `budgetClockMillis` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runId",
+            "columnName": "runId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "budgetClockMillis",
+            "columnName": "budgetClockMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "budget_clock_observation",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `wallClockEpochMillis` INTEGER NOT NULL, `elapsedRealtimeMillis` INTEGER NOT NULL, `effectiveBudgetClockMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wallClockEpochMillis",
+            "columnName": "wallClockEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "elapsedRealtimeMillis",
+            "columnName": "elapsedRealtimeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveBudgetClockMillis",
+            "columnName": "effectiveBudgetClockMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "flight_alerts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `originIata` TEXT NOT NULL, `destinationIata` TEXT NOT NULL, `outboundDate` TEXT NOT NULL, `returnDate` TEXT NOT NULL, `maxTotalCop` INTEGER NOT NULL, `frequencyHours` INTEGER NOT NULL, `directOnly` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `lastAttemptAt` INTEGER, `lastReviewCompletedAt` INTEGER, `lastAutomaticAttemptAt` INTEGER, `nextDueAt` INTEGER, `criteriaVersion` INTEGER NOT NULL DEFAULT 1, `notificationPolicyVersion` INTEGER NOT NULL DEFAULT 1, `candidateRotation` INTEGER NOT NULL DEFAULT 0, `adults18Plus` INTEGER NOT NULL DEFAULT 1, `minorPassengersJson` TEXT NOT NULL DEFAULT '[]', `flexibleDateSearch` INTEGER NOT NULL DEFAULT 0, `outboundDateEnd` TEXT NOT NULL DEFAULT '', `returnDateEnd` TEXT NOT NULL DEFAULT '', `datePairRotation` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originIata",
+            "columnName": "originIata",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "destinationIata",
+            "columnName": "destinationIata",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outboundDate",
+            "columnName": "outboundDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "returnDate",
+            "columnName": "returnDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxTotalCop",
+            "columnName": "maxTotalCop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frequencyHours",
+            "columnName": "frequencyHours",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "directOnly",
+            "columnName": "directOnly",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAt",
+            "columnName": "lastAttemptAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastReviewCompletedAt",
+            "columnName": "lastReviewCompletedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastAutomaticAttemptAt",
+            "columnName": "lastAutomaticAttemptAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextDueAt",
+            "columnName": "nextDueAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "criteriaVersion",
+            "columnName": "criteriaVersion",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "notificationPolicyVersion",
+            "columnName": "notificationPolicyVersion",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "candidateRotation",
+            "columnName": "candidateRotation",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "adults18Plus",
+            "columnName": "adults18Plus",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "minorPassengersJson",
+            "columnName": "minorPassengersJson",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "flexibleDateSearch",
+            "columnName": "flexibleDateSearch",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "outboundDateEnd",
+            "columnName": "outboundDateEnd",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "returnDateEnd",
+            "columnName": "returnDateEnd",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "datePairRotation",
+            "columnName": "datePairRotation",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_flight_alerts_enabled_nextDueAt",
+            "unique": false,
+            "columnNames": [
+              "enabled",
+              "nextDueAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_flight_alerts_enabled_nextDueAt` ON `${TABLE_NAME}` (`enabled`, `nextDueAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "flight_alert_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`alertId` TEXT NOT NULL, `status` TEXT NOT NULL, `lastAttemptAt` INTEGER NOT NULL, `attemptCriteria` TEXT, `attemptMaximumCop` INTEGER, `networkReceivedAt` INTEGER, `lastError` TEXT, `lastVerifiedTotalCop` INTEGER, `lastVerifiedAt` INTEGER, `verifiedCriteria` TEXT, `selectedOfferJson` TEXT, `airlinesJson` TEXT, `candidatesConsidered` INTEGER NOT NULL, `candidateLimit` INTEGER NOT NULL, `explorationLimited` INTEGER NOT NULL, `accountBalanceAtStart` INTEGER, `flightGetsStarted` INTEGER NOT NULL, `googleFlightsUrl` TEXT, `verifiedOffersJson` TEXT, `datePairsChecked` INTEGER NOT NULL DEFAULT 1, `datePairCount` INTEGER NOT NULL DEFAULT 1, `datePairProgressMask` INTEGER NOT NULL DEFAULT 0, `datePairIncompleteMask` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`alertId`), FOREIGN KEY(`alertId`) REFERENCES `flight_alerts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "alertId",
+            "columnName": "alertId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAt",
+            "columnName": "lastAttemptAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCriteria",
+            "columnName": "attemptCriteria",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attemptMaximumCop",
+            "columnName": "attemptMaximumCop",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "networkReceivedAt",
+            "columnName": "networkReceivedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastVerifiedTotalCop",
+            "columnName": "lastVerifiedTotalCop",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastVerifiedAt",
+            "columnName": "lastVerifiedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "verifiedCriteria",
+            "columnName": "verifiedCriteria",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "selectedOfferJson",
+            "columnName": "selectedOfferJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "airlinesJson",
+            "columnName": "airlinesJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "candidatesConsidered",
+            "columnName": "candidatesConsidered",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "candidateLimit",
+            "columnName": "candidateLimit",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "explorationLimited",
+            "columnName": "explorationLimited",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountBalanceAtStart",
+            "columnName": "accountBalanceAtStart",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "flightGetsStarted",
+            "columnName": "flightGetsStarted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "googleFlightsUrl",
+            "columnName": "googleFlightsUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "verifiedOffersJson",
+            "columnName": "verifiedOffersJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "datePairsChecked",
+            "columnName": "datePairsChecked",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "datePairCount",
+            "columnName": "datePairCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "datePairProgressMask",
+            "columnName": "datePairProgressMask",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "datePairIncompleteMask",
+            "columnName": "datePairIncompleteMask",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "alertId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "flight_alerts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "alertId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sent_notifications",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `alertId` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `itineraryIdentity` TEXT NOT NULL, `priceCop` INTEGER NOT NULL, `sentAt` INTEGER NOT NULL, `routeSummary` TEXT NOT NULL, `outboundCarrier` TEXT NOT NULL, `returnCarrier` TEXT NOT NULL, `outboundDepartureLocal` TEXT, `returnDepartureLocal` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`alertId`) REFERENCES `flight_alerts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alertId",
+            "columnName": "alertId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itineraryIdentity",
+            "columnName": "itineraryIdentity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceCop",
+            "columnName": "priceCop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sentAt",
+            "columnName": "sentAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "routeSummary",
+            "columnName": "routeSummary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outboundCarrier",
+            "columnName": "outboundCarrier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "returnCarrier",
+            "columnName": "returnCarrier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outboundDepartureLocal",
+            "columnName": "outboundDepartureLocal",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "returnDepartureLocal",
+            "columnName": "returnDepartureLocal",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sent_notifications_sentAt",
+            "unique": false,
+            "columnNames": [
+              "sentAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sent_notifications_sentAt` ON `${TABLE_NAME}` (`sentAt`)"
+          },
+          {
+            "name": "index_sent_notifications_alertId",
+            "unique": false,
+            "columnNames": [
+              "alertId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sent_notifications_alertId` ON `${TABLE_NAME}` (`alertId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "flight_alerts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "alertId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "notification_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`fingerprint` TEXT NOT NULL, `alertId` TEXT NOT NULL, `itineraryIdentity` TEXT NOT NULL, `priceCop` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `routeSummary` TEXT NOT NULL, `outboundCarrier` TEXT NOT NULL, `returnCarrier` TEXT NOT NULL, `outboundDepartureLocal` TEXT, `returnDepartureLocal` TEXT, `explorationLimited` INTEGER NOT NULL, `criteriaVersion` INTEGER NOT NULL, `notificationPolicyVersion` INTEGER NOT NULL, PRIMARY KEY(`fingerprint`), FOREIGN KEY(`alertId`) REFERENCES `flight_alerts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alertId",
+            "columnName": "alertId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itineraryIdentity",
+            "columnName": "itineraryIdentity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceCop",
+            "columnName": "priceCop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "routeSummary",
+            "columnName": "routeSummary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outboundCarrier",
+            "columnName": "outboundCarrier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "returnCarrier",
+            "columnName": "returnCarrier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outboundDepartureLocal",
+            "columnName": "outboundDepartureLocal",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "returnDepartureLocal",
+            "columnName": "returnDepartureLocal",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "explorationLimited",
+            "columnName": "explorationLimited",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "criteriaVersion",
+            "columnName": "criteriaVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notificationPolicyVersion",
+            "columnName": "notificationPolicyVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "fingerprint"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notification_outbox_alertId",
+            "unique": false,
+            "columnNames": [
+              "alertId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notification_outbox_alertId` ON `${TABLE_NAME}` (`alertId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "flight_alerts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "alertId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "notified_fingerprints",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`fingerprint` TEXT NOT NULL, `alertId` TEXT NOT NULL, `itineraryIdentity` TEXT NOT NULL, `priceCop` INTEGER NOT NULL, `firstSentAt` INTEGER NOT NULL, PRIMARY KEY(`fingerprint`), FOREIGN KEY(`alertId`) REFERENCES `flight_alerts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alertId",
+            "columnName": "alertId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itineraryIdentity",
+            "columnName": "itineraryIdentity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceCop",
+            "columnName": "priceCop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSentAt",
+            "columnName": "firstSentAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "fingerprint"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notified_fingerprints_alertId",
+            "unique": false,
+            "columnNames": [
+              "alertId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notified_fingerprints_alertId` ON `${TABLE_NAME}` (`alertId`)"
+          },
+          {
+            "name": "index_notified_fingerprints_itineraryIdentity",
+            "unique": false,
+            "columnNames": [
+              "itineraryIdentity"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notified_fingerprints_itineraryIdentity` ON `${TABLE_NAME}` (`itineraryIdentity`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "flight_alerts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "alertId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "lowest_notified_prices",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`itineraryIdentity` TEXT NOT NULL, `alertId` TEXT NOT NULL, `lowestPriceCop` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`itineraryIdentity`), FOREIGN KEY(`alertId`) REFERENCES `flight_alerts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "itineraryIdentity",
+            "columnName": "itineraryIdentity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alertId",
+            "columnName": "alertId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lowestPriceCop",
+            "columnName": "lowestPriceCop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "itineraryIdentity"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_lowest_notified_prices_alertId",
+            "unique": false,
+            "columnNames": [
+              "alertId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lowest_notified_prices_alertId` ON `${TABLE_NAME}` (`alertId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "flight_alerts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "alertId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "installation_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `exampleInitialized` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exampleInitialized",
+            "columnName": "exampleInitialized",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e232ef273799a9abfad2353ed1dc56f4')"
+    ]
+  }
+}

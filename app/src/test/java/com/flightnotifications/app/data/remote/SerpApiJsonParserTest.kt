@@ -134,6 +134,22 @@ class SerpApiJsonParserTest {
         assertNull(parsed.options.last().segments.first().departure.localDateTime)
     }
 
+    @Test
+    fun combinesSeparateDateAndLocalTimeFieldsReturnedForInternationalFlights() {
+        val raw = fixture("outbound.json").toMutableMap()
+        raw["best_flights"] = Json.parseToJsonElement(
+            """[{"flights":[{"departure_airport":{"id":"SYD","date":"2027-03-25","time":"00:00"},"arrival_airport":{"id":"LAX","date":"2027-03-24","time":"23:00"},"duration":1020,"airline":"Test Air"}],"price":950000}]""",
+        )
+        raw["other_flights"] = Json.parseToJsonElement("[]")
+
+        val flight = parser.parse(JsonObject(raw)).options.single().segments.single()
+
+        assertEquals("SYD", flight.departure.code)
+        assertEquals(java.time.LocalDateTime.parse("2027-03-25T00:00"), flight.departure.localDateTime)
+        assertEquals(java.time.LocalDateTime.parse("2027-03-24T23:00"), flight.arrival.localDateTime)
+        assertEquals(1020, flight.durationMinutes)
+    }
+
     private fun fixture(name: String): JsonObject =
         Json.parseToJsonElement(javaClass.getResource("/fixtures/$name")!!.readText()) as JsonObject
 }

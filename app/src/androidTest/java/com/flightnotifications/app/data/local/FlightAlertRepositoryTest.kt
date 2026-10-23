@@ -82,6 +82,109 @@ class FlightAlertRepositoryTest {
     }
 
     @Test
+    fun flexibleReviewsAccumulateTheCheapestFareAcrossPairsAndAdvanceInOrder() = runBlocking {
+        val original = alert().copy(
+            flexibleDateSearch = true,
+            outboundDateEnd = "2027-03-26",
+            returnDateEnd = "2027-03-29",
+        )
+        dao.putAlert(original)
+
+        assertTrue(repository.saveOutcome(original.id, flexibleOutcome(0, 4, 360_000, "offer-day-one"), original))
+        repository.advanceDatePairRotation(original, flexibleOutcome(0, 4, 360_000, "offer-day-one"))
+        assertEquals(1, repository.find(original.id)?.datePairRotation)
+
+        val second = flexibleOutcome(1, 4, 340_000, "offer-day-two")
+        assertTrue(repository.saveOutcome(original.id, second, original))
+        repository.advanceDatePairRotation(original.copy(datePairRotation = 1), second)
+
+        val result = repository.result(original.id)!!
+        assertEquals(2, result.datePairsChecked)
+        assertEquals(4, result.datePairCount)
+        assertEquals(0b0011L, result.datePairProgressMask)
+        assertTrue(result.explorationLimited)
+        assertEquals(340_000L, result.lastVerifiedTotalCop)
+        assertEquals(2, kotlinx.serialization.json.Json.decodeFromString<List<VerifiedRoundTripOffer>>(result.verifiedOffersJson!!).size)
+        assertEquals(2, repository.find(original.id)?.datePairRotation)
+    }
+
+    @Test
+    fun flexibleResultsStartANewCycleAfterEveryCombinationHasBeenScanned() = runBlocking {
+        val original = alert().copy(flexibleDateSearch = true, outboundDateEnd = "2027-03-26", returnDateEnd = "2027-03-29")
+        dao.putAlert(original)
+        for (index in 0 until 4) {
+            val result = flexibleOutcome(index, 4, 400_000L - index * 10_000, "cycle-one-$index")
+            assertTrue(repository.saveOutcome(original.id, result, original))
+        }
+        assertEquals(0b1111L, repository.result(original.id)?.datePairProgressMask)
+
+        val nextCycle = flexibleOutcome(0, 4, 450_000, "cycle-two-0")
+        assertTrue(repository.saveOutcome(original.id, nextCycle, original))
+        val saved = repository.result(original.id)!!
+        assertEquals(1, saved.datePairsChecked)
+        assertEquals(1L, saved.datePairProgressMask)
+        assertEquals(450_000L, saved.lastVerifiedTotalCop)
+        assertEquals(1, kotlinx.serialization.json.Json.decodeFromString<List<VerifiedRoundTripOffer>>(saved.verifiedOffersJson!!).size)
+    }
+
+    @Test
+    fun flexibleCycleKeepsPartialCandidateCoverageUntilTheNextCycle() = runBlocking {
+        val original = alert().copy(flexibleDateSearch = true, outboundDateEnd = "2027-03-26", returnDateEnd = "2027-03-29")
+        dao.putAlert(original)
+
+        for (index in 0 until 4) {
+            val result = flexibleOutcome(index, 4, 400_000L - index * 10_000, "limited-cycle-$index").copy(
+                candidateExplorationLimited = index == 0,
+            )
+            assertTrue(repository.saveOutcome(original.id, result, original))
+        }
+
+        val completed = repository.result(original.id)!!
+        assertEquals(0b1111L, completed.datePairProgressMask)
+        assertEquals(0b0001L, completed.datePairIncompleteMask)
+        assertTrue(completed.explorationLimited)
+
+        val nextCycle = flexibleOutcome(0, 4, 450_000, "next-cycle-complete")
+        assertTrue(repository.saveOutcome(original.id, nextCycle, original))
+        val restarted = repository.result(original.id)!!
+        assertEquals(0L, restarted.datePairIncompleteMask)
+        assertTrue(restarted.explorationLimited)
+    }
+
+    @Test
+    fun oneExecutionPersistsEveryScannedPairAndAccountsForCandidateFailures() = runBlocking {
+        val original = alert().copy(
+            flexibleDateSearch = true,
+            outboundDateEnd = "2027-03-26",
+            returnDateEnd = "2027-03-29",
+        )
+        dao.putAlert(original)
+        val outcome = flexibleOutcome(0, 4, 330_000, "multi-pair").copy(
+            datePairAttemptedIndices = listOf(0, 1),
+            datePairScannedIndices = listOf(0, 1),
+            datePairIncompleteIndices = listOf(1),
+            candidatesCompleted = 3,
+            candidateFailures = 1,
+            accountAlias = "Cuenta-2",
+            flightGetsStarted = 6,
+            explorationLimited = true,
+            candidateExplorationLimited = true,
+        )
+
+        assertTrue(repository.saveOutcome(original.id, outcome, original))
+        repository.advanceDatePairRotation(original, outcome)
+
+        val result = repository.result(original.id)!!
+        assertEquals(0b0011L, result.datePairProgressMask)
+        assertEquals(0b0010L, result.datePairIncompleteMask)
+        assertEquals(2, result.datePairsChecked)
+        assertEquals(3, result.candidatesCompleted)
+        assertEquals(1, result.candidateFailures)
+        assertEquals("Cuenta-2", result.accountAlias)
+        assertEquals(2, repository.find(original.id)?.datePairRotation)
+    }
+
+    @Test
     fun changingEachRouteOrDateFieldInvalidatesThePriorCriteriaVersion() = runBlocking {
         val edits: List<(FlightAlertEntity) -> FlightAlertEntity> = listOf(
             { it.copy(originIata = "BOG") },
@@ -213,5 +316,25 @@ class FlightAlertRepositoryTest {
         explorationLimited = false,
         accountBalanceAtStart = 20,
         flightGetsStarted = 2,
+    )
+
+    private fun flexibleOutcome(index: Int, count: Int, price: Long, fingerprint: String) = verifiedResult().copy(
+        offers = listOf(
+            verifiedResult().offers.single().copy(
+                outbound = listOf(
+                    AlertFlightSegment("CTG", "CLO", "2027-03-${if (index < 2) "25" else "26"}T08:00", "2027-03-${if (index < 2) "25" else "26"}T09:30", "JetSMART", "JA100"),
+                ),
+                returning = listOf(
+                    AlertFlightSegment("CLO", "CTG", "2027-03-${if (index % 2 == 0) "28" else "29"}T10:00", "2027-03-${if (index % 2 == 0) "28" else "29"}T11:30", "JetSMART", "JA101"),
+                ),
+                totalCop = price,
+                itineraryIdentity = fingerprint,
+                fingerprint = fingerprint,
+            ),
+        ),
+        datePairIndex = index,
+        datePairCount = count,
+        datePairScanned = true,
+        explorationLimited = index < count - 1,
     )
 }

@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -77,7 +78,7 @@ import com.flightnotifications.app.domain.model.SearchCriteria
 import com.flightnotifications.app.domain.model.VerifiedRoundTripOffer
 import com.flightnotifications.app.domain.model.MinorPassenger
 import com.flightnotifications.app.domain.model.PassengerSelection
-import com.flightnotifications.app.domain.validation.ColombianAirportCatalog
+import com.flightnotifications.app.domain.validation.AirportCatalog
 import com.flightnotifications.app.ui.theme.FlightAppColors
 import java.text.NumberFormat
 import java.time.Instant
@@ -99,7 +100,7 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context as? Activity
-    var pendingDelete by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
     var page by remember { mutableStateOf(AppPage.ALERTS) }
     var returnPage by remember { mutableStateOf(AppPage.ALERTS) }
     var editorAlertId by remember { mutableStateOf<String?>(null) }
@@ -175,7 +176,6 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
                 if (alertsViewModel != null) {
                     FlightAlertsSection(
                         viewModel = alertsViewModel,
-                        maximumLocalGets = state.localBudgetLimit,
                         onCreateAlert = { editorAlertId = null; openSubpage(AppPage.EDITOR) },
                         onEditAlert = { id -> editorAlertId = id; openSubpage(AppPage.EDITOR) },
                         onOpenDetail = { id -> selectedAlertId = id; openSubpage(AppPage.DETAIL) },
@@ -203,9 +203,21 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
                     alertsViewModel = alertsViewModel,
                     notificationsAllowed = notificationsAllowed,
                     onSaveCredential = viewModel::saveCredential,
-                    onDeleteCredential = { pendingDelete = true },
+                    onDeleteCredential = { pendingDelete = it },
                     onCheckAccount = viewModel::checkAccount,
                     onReduceBudget = viewModel::reduceLocalBudgetLimit,
+                    onCopyLastSearchLog = {
+                        val copied = runCatching {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                ?: error("Portapapeles no disponible")
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Log de la última búsqueda", state.flightDiagnosticLog))
+                        }
+                        Toast.makeText(
+                            context,
+                            if (copied.isSuccess) "Log de la última búsqueda copiado" else "No se pudo copiar el log; puede ser demasiado grande",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    },
                     onOpenDiagnostic = { openSubpage(AppPage.DIAGNOSTIC) },
                     onOpenCatalog = { showCatalog = true },
                     onOpenNotificationSettings = {
@@ -279,15 +291,15 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
         )
     }
 
-    if (pendingDelete) {
+    pendingDelete?.let { credentialId ->
         AlertDialog(
-            onDismissRequest = { pendingDelete = false },
-            title = { Text("Eliminar clave") },
-            text = { Text("Se borrará la clave cifrada de este dispositivo y se invalidarán el saldo y los resultados en memoria.") },
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Eliminar API key") },
+            text = { Text("Se quitará esta cuenta de la lista local. Las demás API keys seguirán disponibles para las búsquedas.") },
             confirmButton = {
-                TextButton(onClick = { pendingDelete = false; viewModel.deleteCredential() }, modifier = Modifier.secondaryButtonTarget()) { Text("Eliminar") }
+                TextButton(onClick = { pendingDelete = null; viewModel.deleteCredential(credentialId) }, modifier = Modifier.secondaryButtonTarget()) { Text("Eliminar") }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = false }, modifier = Modifier.secondaryButtonTarget()) { Text("Volver") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }, modifier = Modifier.secondaryButtonTarget()) { Text("Volver") } },
         )
     }
 
@@ -320,7 +332,7 @@ fun ProbeScreen(viewModel: ProbeViewModel, alertsViewModel: FlightAlertsViewMode
 @Composable
 private fun ActivityScreen(
     state: FlightAlertsUiState,
-    airportCatalog: ColombianAirportCatalog?,
+    airportCatalog: AirportCatalog?,
     onClear: () -> Unit,
     onOpenAlert: (String) -> Unit,
 ) {
@@ -370,7 +382,10 @@ private fun ActivityScreen(
                         destinationAirport = destination?.let(::airportShortName),
                         dates = alert?.let {
                             val minors = runCatching { Json.decodeFromString<List<MinorPassenger>>(it.minorPassengersJson) }.getOrDefault(emptyList())
-                            "${formatTripDates(it.outboundDate, it.returnDate)} · ${PassengerSelection.summary(it.adults18Plus, minors)}"
+                            val selectedDates = if (it.flexibleDateSearch) matchingOffer?.let(::formatOfferTripDates)
+                                ?: formatTripDates(it.outboundDate, it.returnDate)
+                            else formatTripDates(it.outboundDate, it.returnDate)
+                            "$selectedDates · ${PassengerSelection.summary(it.adults18Plus, minors)}"
                         } ?: "",
                         price = notice.priceCop,
                         carriers = listOf(notice.outboundCarrier, notice.returnCarrier).filter(String::isNotBlank).joinToString(" / "),
@@ -468,13 +483,21 @@ private fun SettingsScreen(
     alertsViewModel: FlightAlertsViewModel?,
     notificationsAllowed: Boolean,
     onSaveCredential: (String) -> Unit,
-    onDeleteCredential: () -> Unit,
+    onDeleteCredential: (String) -> Unit,
     onCheckAccount: () -> Unit,
     onReduceBudget: (Int) -> Unit,
+    onCopyLastSearchLog: () -> Unit,
     onOpenDiagnostic: () -> Unit,
     onOpenCatalog: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val appVersion = remember(context) {
+        context.packageManager.getPackageInfo(
+            context.packageName,
+            android.content.pm.PackageManager.PackageInfoFlags.of(0),
+        ).versionName.orEmpty()
+    }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.fillMaxWidth().height(72.dp)) {
             FlightSkyDecoration(Modifier.fillMaxSize())
@@ -482,9 +505,12 @@ private fun SettingsScreen(
         }
         CredentialCard(
             configured = state.credentialConfigured,
+            accounts = state.credentialAccounts,
             busy = credentialBusy,
+            saveCompleted = state.credentialSaveCompleted,
+            saveError = state.credentialSaveError,
             accountMessage = state.accountMessage,
-            accountActive = state.account?.accountStatus.equals("Active", ignoreCase = true),
+            accountActive = state.credentialAccounts.any { it.active },
             onSave = onSaveCredential,
             onDelete = onDeleteCredential,
             onCheckAccount = onCheckAccount,
@@ -494,7 +520,7 @@ private fun SettingsScreen(
             used = state.budget?.usedInWindow ?: 0,
             remaining = state.budget?.remainingInWindow ?: state.localBudgetLimit,
             onSave = onReduceBudget,
-            officialAvailable = state.account?.conservativeSearchesLeft,
+            officialAvailable = state.credentialAccounts.filter { it.active }.mapNotNull { it.searchesLeft }.sum().takeIf { state.credentialAccounts.isNotEmpty() },
             accountCheckedAt = state.account?.checkedAt?.toEpochMilli(),
         )
         Card(
@@ -510,19 +536,42 @@ private fun SettingsScreen(
                     SettingsRow(AppIcon.Info, "Diagnóstico", "Programación, pruebas y registros", onOpenDiagnostic)
                     HorizontalDivider(Modifier.padding(horizontal = 8.dp))
                     SettingsRow(AppIcon.Flight, "Aerolíneas compatibles", "Catálogo informativo", onOpenCatalog)
+                    HorizontalDivider(Modifier.padding(horizontal = 8.dp))
+                    SettingsRow(
+                        AppIcon.Copy,
+                        "Copiar log de última búsqueda",
+                        "Se reemplaza con cada búsqueda; claves y datos de cuenta se ocultan",
+                        onCopyLastSearchLog,
+                        enabled = state.flightDiagnosticLog.isNotBlank(),
+                    )
+                    state.flightDiagnosticStorageError?.let { error ->
+                        Text(
+                            "No se pudo guardar el log completo en el dispositivo ($error). La búsqueda siguió ejecutándose; copia el registro ahora para conservarlo.",
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }
-        Text("Alertas de vuelos · versión 1.0.14", modifier = Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("Alertas de vuelos · versión $appVersion", modifier = Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         state.errorMessage?.let { ErrorCard(it) }
         if (alertsViewModel == null) Text("No se pudo cargar el estado de alertas.", color = MaterialTheme.colorScheme.error)
     }
 }
 
 @Composable
-private fun SettingsRow(icon: AppIcon, title: String, subtitle: String?, onClick: () -> Unit, success: Boolean = false) {
+private fun SettingsRow(
+    icon: AppIcon,
+    title: String,
+    subtitle: String?,
+    onClick: () -> Unit,
+    success: Boolean = false,
+    enabled: Boolean = true,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -636,7 +685,10 @@ private fun DiagnosticScreen(
         DiagnosticLogCard(
             title = if (showFlightLog) "Registro de búsqueda de vuelos" else "Registro de conexión",
             emptyMessage = if (showFlightLog) "Aún no hay eventos. Confirma una búsqueda para registrar el intento." else "Aún no hay eventos. Pulsa Probar conexión para registrar el intento.",
-            logText = if (showFlightLog) state.flightDiagnosticLog else state.accountDiagnosticLog,
+            logText = if (showFlightLog) state.flightDiagnosticLog.takeLast(MAX_FLIGHT_LOG_PREVIEW_CHARS) else state.accountDiagnosticLog,
+            description = if (showFlightLog) {
+                if (state.flightDiagnosticLog.length > MAX_FLIGHT_LOG_PREVIEW_CHARS) "Vista previa de las últimas líneas. Copiar incluye el log completo. Claves y datos de cuenta se ocultan." else "Incluye solicitudes, respuestas completas y validaciones de la última búsqueda. Claves y datos de cuenta se ocultan."
+            } else "Registro local de comprobaciones de conexión. No incluye claves API.",
             onClear = if (showFlightLog) onClearFlightLog else onClearAccountLog,
             onCopy = if (showFlightLog) onCopyFlightLog else onCopyAccountLog,
         )
@@ -667,6 +719,14 @@ private fun formatTripDates(outbound: String, returning: String): String {
     else "${start.format(format)}–${end.format(format)}"
 }
 
+private fun formatOfferTripDates(offer: VerifiedRoundTripOffer): String {
+    val format = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO"))
+    val outbound = offer.outbound.firstOrNull()?.departureLocal?.take(10)?.let { runCatching { LocalDate.parse(it).format(format) }.getOrNull() }
+        ?: return "Fechas del vuelo no disponibles"
+    val returning = offer.returning.firstOrNull()?.departureLocal?.take(10)?.let { runCatching { LocalDate.parse(it).format(format) }.getOrNull() }
+    return if (returning == null) "Solo ida · $outbound" else "$outbound · regreso $returning"
+}
+
 private fun formatShortTime(epochMillis: Long): String = DateTimeFormatter.ofPattern("HH:mm")
     .withZone(ZoneId.of("America/Bogota")).format(Instant.ofEpochMilli(epochMillis))
 
@@ -683,6 +743,7 @@ private fun DiagnosticLogCard(
     title: String,
     emptyMessage: String,
     logText: String,
+    description: String,
     onClear: () -> Unit,
     onCopy: () -> Unit,
 ) {
@@ -694,10 +755,7 @@ private fun DiagnosticLogCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Registro local para investigar. No guarda la API key, tokens ni el contenido de las respuestas.",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            Text(description, style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(
                 value = logText.ifBlank { emptyMessage },
                 onValueChange = {},
@@ -721,18 +779,29 @@ private fun DiagnosticLogCard(
     }
 }
 
+private const val MAX_FLIGHT_LOG_PREVIEW_CHARS = 12_000
+
 @Composable
 private fun CredentialCard(
     configured: Boolean,
+    accounts: List<CredentialAccountUi>,
     busy: Boolean,
+    saveCompleted: Boolean,
+    saveError: String?,
     accountMessage: String?,
     accountActive: Boolean,
     onSave: (String) -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (String) -> Unit,
     onCheckAccount: () -> Unit,
 ) {
     var apiKeyInput by remember { mutableStateOf("") }
-    var editing by remember(configured) { mutableStateOf(!configured) }
+    var adding by remember(configured) { mutableStateOf(!configured) }
+    LaunchedEffect(saveCompleted) {
+        if (saveCompleted) {
+            apiKeyInput = ""
+            adding = false
+        }
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -752,8 +821,8 @@ private fun CredentialCard(
                             Box(contentAlignment = Alignment.Center) { AppIcon(if (accountActive) AppIcon.Verified else AppIcon.Info, null, modifier = Modifier.size(20.dp), tint = Color.White) }
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(if (accountActive) "Cuenta activa" else if (configured) "Cuenta sin comprobar" else "Cuenta no conectada", color = if (accountActive) Color(0xFF157552) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                            Text(accountMessage ?: if (accountActive) "Cuenta comprobada. Account API no consume búsquedas de vuelos." else "Comprueba el estado de la cuenta antes de buscar.", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                            Text(if (accountActive) "Cuentas disponibles" else if (configured) "Cuentas sin saldo o sin validar" else "Sin cuentas conectadas", color = if (accountActive) Color(0xFF157552) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text(accountMessage ?: if (accountActive) "Las consultas usarán la primera cuenta con capacidad disponible." else "Añade una o más API keys de SerpApi.", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -762,45 +831,75 @@ private fun CredentialCard(
                         Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Key, "Clave protegida", tint = Color(0xFF7C48BF)) }
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(if (configured) "Clave guardada" else "Clave de SerpApi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(if (configured) "Protegida en este dispositivo" else "Guárdala cifrada para conectar la app", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                        Text("Cuentas de SerpApi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Cada API key pertenece a su propia cuenta", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
                     }
                     if (configured) OutlinedButton(
-                        onClick = { editing = !editing },
+                        onClick = onCheckAccount,
+                        enabled = !busy,
                         modifier = Modifier.secondaryButtonTarget(),
                         shape = CircleShape,
                         border = androidx.compose.foundation.BorderStroke(1.dp, FlightAppColors.teal.copy(alpha = 0.6f)),
-                    ) { Text(if (editing) "Cerrar" else "Cambiar", color = FlightAppColors.tealDark) }
+                    ) { Text("Actualizar", color = FlightAppColors.tealDark) }
                 }
-                if (configured) OutlinedButton(
-                    onClick = onCheckAccount,
-                    enabled = !busy,
-                    modifier = Modifier.align(Alignment.Start).primaryButtonTarget(),
-                    shape = CircleShape,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, FlightAppColors.teal.copy(alpha = 0.55f)),
-                ) {
-                    AppIcon(AppIcon.Refresh, null, tint = FlightAppColors.tealDark)
-                    Text("Probar conexión", color = FlightAppColors.tealDark)
+                if (accounts.isNotEmpty()) {
+                    accounts.forEachIndexed { index, account ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = if (account.active) Color(0xFFF0F8F6) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Surface(color = if (account.active) Color(0xFFD8F1E7) else FlightAppColors.paleLavender, shape = CircleShape, modifier = Modifier.size(34.dp)) {
+                                    Box(contentAlignment = Alignment.Center) { Text("${index + 1}", color = if (account.active) Color(0xFF157552) else MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) }
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(account.maskedKey, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                    Text(account.status, color = if (account.active) Color(0xFF157552) else MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                                }
+                                TextButton(onClick = { onDelete(account.id) }, enabled = !busy, modifier = Modifier.secondaryButtonTarget()) {
+                                    Text("Quitar", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
                 }
-                if (editing) {
+                if (configured && !adding) {
+                    OutlinedButton(
+                        onClick = { adding = true },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().primaryButtonTarget(),
+                        shape = CircleShape,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FlightAppColors.teal.copy(alpha = 0.55f)),
+                    ) {
+                        AppIcon(AppIcon.Add, null, tint = FlightAppColors.tealDark)
+                        Text("Añadir API key", color = FlightAppColors.tealDark)
+                    }
+                }
+                if (adding) {
                     OutlinedTextField(
                         value = apiKeyInput,
                         onValueChange = { apiKeyInput = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Clave privada") },
-                        placeholder = { Text(if (configured) "Escribe una clave nueva para sustituirla" else "Ingresa la clave en este dispositivo") },
+                        label = { Text("API key de otra cuenta") },
+                        placeholder = { Text("Pega aquí la API key") },
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         singleLine = true,
                         enabled = !busy,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { onSave(apiKeyInput); apiKeyInput = "" }, enabled = !busy && apiKeyInput.isNotBlank(), modifier = Modifier.primaryButtonTarget(), shape = CircleShape) {
-                            Text(if (configured) "Guardar cambios" else "Guardar cifrada")
+                        Button(onClick = { onSave(apiKeyInput) }, enabled = !busy && apiKeyInput.isNotBlank(), modifier = Modifier.primaryButtonTarget(), shape = CircleShape) {
+                            Text(if (busy) "Validando…" else "Validar y añadir")
                         }
-                        if (configured) TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.secondaryButtonTarget()) { Text("Eliminar clave") }
+                        if (configured) TextButton(onClick = { adding = false; apiKeyInput = "" }, enabled = !busy, modifier = Modifier.secondaryButtonTarget()) { Text("Cancelar") }
                     }
-                    Text("La clave se cifra con Android Keystore y no se muestra después de guardarla.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    saveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    Text("La clave se comprueba con el endpoint de cuenta y se guarda cifrada en este dispositivo. Las cuentas se prueban en el orden mostrado.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                 }
             }
         }
@@ -941,14 +1040,14 @@ private fun LocalBudgetCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Surface(Modifier.weight(1f), color = FlightAppColors.paleBlue, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDCEBF5))) {
                         Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Saldo de SerpApi", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                            Text("Saldo combinado · cuentas activas", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
                             Text(officialAvailable?.toString() ?: "—", style = MaterialTheme.typography.headlineLarge, color = FlightAppColors.tealDark, fontWeight = FontWeight.Bold)
                             Text(accountCheckedAt?.let { "Consultado ${formatShortTime(it)}" } ?: "Saldo sin consultar", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     Surface(Modifier.weight(1f), color = FlightAppColors.paleLavender, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE4DCF4))) {
                         Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Consultas disponibles", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                            Text("Consultas disponibles en la app", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
                             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(remaining.toString(), style = MaterialTheme.typography.headlineLarge, color = Color(0xFF6042AD), fontWeight = FontWeight.Bold)
                                 Text("de $maximum", modifier = Modifier.padding(bottom = 5.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
@@ -977,7 +1076,7 @@ private fun LocalBudgetCard(
                 Surface(color = FlightAppColors.paleYellow, shape = MaterialTheme.shapes.medium) {
                     Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppIcon(AppIcon.Info, null, modifier = Modifier.size(18.dp), tint = Color(0xFFE2A52F))
-                        Text("El saldo del proveedor y el límite local son independientes. Las reservas ya iniciadas se conservan.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF75602E))
+                        Text("El saldo se consulta por separado para cada cuenta. El límite local de esta app es independiente; las reservas ya iniciadas se conservan.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF75602E))
                     }
                 }
             }

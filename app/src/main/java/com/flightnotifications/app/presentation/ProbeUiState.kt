@@ -5,8 +5,19 @@ import com.flightnotifications.app.domain.model.LocalBudgetSnapshot
 import com.flightnotifications.app.domain.model.ProbeOutcome
 import java.time.LocalDate
 
+data class CredentialAccountUi(
+    val id: String,
+    val maskedKey: String,
+    val status: String,
+    val active: Boolean,
+    val searchesLeft: Int?,
+)
+
 data class ProbeUiState(
     val credentialConfigured: Boolean = false,
+    val credentialAccounts: List<CredentialAccountUi> = emptyList(),
+    val credentialSaveCompleted: Boolean = false,
+    val credentialSaveError: String? = null,
     val outboundDate: LocalDate = LocalDate.of(2027, 1, 25),
     val returnDate: LocalDate = LocalDate.of(2027, 2, 3),
     val directOnly: Boolean = true,
@@ -22,4 +33,5 @@ data class ProbeUiState(
     val isDeletingCredential: Boolean = false,
     val accountDiagnosticLog: String = "",
     val flightDiagnosticLog: String = "",
+    val flightDiagnosticStorageError: String? = null,
 )

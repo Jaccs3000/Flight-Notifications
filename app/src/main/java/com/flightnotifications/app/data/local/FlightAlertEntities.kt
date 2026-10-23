@@ -29,6 +29,10 @@ data class FlightAlertEntity(
     @ColumnInfo(defaultValue = "0") val candidateRotation: Int = 0,
     @ColumnInfo(defaultValue = "1") val adults18Plus: Int = 1,
     @ColumnInfo(defaultValue = "[]") val minorPassengersJson: String = "[]",
+    @ColumnInfo(defaultValue = "0") val flexibleDateSearch: Boolean = false,
+    @ColumnInfo(defaultValue = "") val outboundDateEnd: String = "",
+    @ColumnInfo(defaultValue = "") val returnDateEnd: String = "",
+    @ColumnInfo(defaultValue = "0") val datePairRotation: Int = 0,
 )
 
 @Entity(
@@ -56,6 +60,14 @@ data class FlightAlertResultEntity(
     val googleFlightsUrl: String? = null,
     /** Bounded to the verified offers from the latest successful review; never a price history. */
     val verifiedOffersJson: String? = null,
+    @ColumnInfo(defaultValue = "1") val datePairsChecked: Int = 1,
+    @ColumnInfo(defaultValue = "1") val datePairCount: Int = 1,
+    @ColumnInfo(defaultValue = "0") val datePairProgressMask: Long = 0,
+    /** Date-pair bits where the provider returned more/malformed outbound choices than this review verified. */
+    @ColumnInfo(defaultValue = "0") val datePairIncompleteMask: Long = 0,
+    @ColumnInfo(defaultValue = "0") val candidatesCompleted: Int = 0,
+    @ColumnInfo(defaultValue = "0") val candidateFailures: Int = 0,
+    val accountAlias: String? = null,
 )
 
 @Entity(

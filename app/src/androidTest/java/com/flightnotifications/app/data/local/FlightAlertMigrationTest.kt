@@ -103,6 +103,69 @@ class FlightAlertMigrationTest {
     }
 
     @Test
+    fun migrationV7ToV10PreservesExactAlertAndAddsFlexibleSearchDefaults() {
+        helper.createDatabase(DATABASE_V7_NAME, 7).apply {
+            execSQL(
+                "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt) " +
+                    "VALUES ('v7-alert', 'Cali a Cartagena', 'CLO', 'CTG', '2027-03-25', '2027-03-28', 450000, 12, 1, 1, 100, 100)",
+            )
+            execSQL(
+                "INSERT INTO flight_alert_results (alertId, status, lastAttemptAt, candidatesConsidered, candidateLimit, explorationLimited, flightGetsStarted) " +
+                    "VALUES ('v7-alert', 'VERIFICADO', 200, 1, 3, 0, 2)",
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DATABASE_V7_NAME, 10, true, ProbeDatabase.MIGRATION_7_8, ProbeDatabase.MIGRATION_8_9, ProbeDatabase.MIGRATION_9_10).use { database ->
+            database.query("SELECT outboundDate, returnDate, flexibleDateSearch, outboundDateEnd, returnDateEnd, datePairRotation FROM flight_alerts WHERE id = 'v7-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("2027-03-25", cursor.getString(0))
+                assertEquals("2027-03-28", cursor.getString(1))
+                assertEquals(0, cursor.getInt(2))
+                assertEquals("", cursor.getString(3))
+                assertEquals("", cursor.getString(4))
+                assertEquals(0, cursor.getInt(5))
+            }
+            database.query("SELECT datePairsChecked, datePairCount FROM flight_alert_results WHERE alertId = 'v7-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+            database.query("SELECT datePairProgressMask FROM flight_alert_results WHERE alertId = 'v7-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+            database.query("SELECT datePairIncompleteMask FROM flight_alert_results WHERE alertId = 'v7-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+        }
+    }
+
+    @Test
+    fun migrationV9MarksPreviouslyVisitedPairsAsConservativelyIncomplete() {
+        helper.createDatabase(DATABASE_V9_NAME, 9).apply {
+            execSQL(
+                "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt) " +
+                    "VALUES ('v9-alert', 'Cali a Cartagena', 'CLO', 'CTG', '2027-03-25', '2027-03-28', 450000, 12, 1, 1, 100, 100)",
+            )
+            execSQL(
+                "INSERT INTO flight_alert_results (alertId, status, lastAttemptAt, candidatesConsidered, candidateLimit, explorationLimited, flightGetsStarted, datePairsChecked, datePairCount, datePairProgressMask) " +
+                    "VALUES ('v9-alert', 'VERIFICADO', 200, 3, 3, 1, 4, 2, 4, 5)",
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DATABASE_V9_NAME, 10, true, ProbeDatabase.MIGRATION_9_10).use { database ->
+            database.query("SELECT datePairProgressMask, datePairIncompleteMask FROM flight_alert_results WHERE alertId = 'v9-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(5L, cursor.getLong(0))
+                assertEquals(5L, cursor.getLong(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationV5ToV6AddsNullableDepartureTimesWithoutLosingSavedNotices() {
         helper.createDatabase(DATABASE_V5_NAME, 5).apply {
             execSQL(
@@ -200,11 +263,44 @@ class FlightAlertMigrationTest {
         }
     }
 
+    @Test
+    fun migrationV10ToV11AddsCandidateAndAccountDiagnosticsWithoutLosingRows() {
+        helper.createDatabase(DATABASE_V10_NAME, 10).apply {
+            execSQL(
+                "INSERT INTO flight_alerts (id, name, originIata, destinationIata, outboundDate, returnDate, maxTotalCop, frequencyHours, directOnly, enabled, createdAt, updatedAt) " +
+                    "VALUES ('legacy-v10-alert', 'Cartagena a Cali', 'CTG', 'CLO', '2027-03-25', '', 400000, 24, 1, 0, 100, 100)",
+            )
+            execSQL(
+                "INSERT INTO flight_alert_results (alertId, status, lastAttemptAt, candidatesConsidered, candidateLimit, explorationLimited, flightGetsStarted, datePairsChecked, datePairCount, datePairProgressMask, datePairIncompleteMask) " +
+                    "VALUES ('legacy-v10-alert', 'VERIFICADO', 200, 2, 8, 1, 3, 1, 4, 1, 1)",
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_V10_NAME,
+            11,
+            true,
+            ProbeDatabase.MIGRATION_10_11,
+        ).use { database ->
+            database.query("SELECT status, candidatesCompleted, candidateFailures, accountAlias FROM flight_alert_results WHERE alertId = 'legacy-v10-alert'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("VERIFICADO", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+                assertEquals(0, cursor.getInt(2))
+                assertTrue(cursor.isNull(3))
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "flight_alert_migration_test.db"
         const val DATABASE_V2_NAME = "flight_alert_migration_v2_test.db"
         const val DATABASE_V4_NAME = "flight_alert_migration_v4_test.db"
         const val DATABASE_V5_NAME = "flight_alert_migration_v5_test.db"
         const val DATABASE_V6_NAME = "flight_alert_migration_v6_test.db"
+        const val DATABASE_V7_NAME = "flight_alert_migration_v7_test.db"
+        const val DATABASE_V9_NAME = "flight_alert_migration_v9_test.db"
+        const val DATABASE_V10_NAME = "flight_alert_migration_v10_test.db"
     }
 }

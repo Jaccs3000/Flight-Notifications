@@ -58,6 +58,8 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
         val routeChanged = previous != null && (
             previous.originIata != alert.originIata || previous.destinationIata != alert.destinationIata ||
                 previous.outboundDate != alert.outboundDate || previous.returnDate != alert.returnDate ||
+                previous.flexibleDateSearch != alert.flexibleDateSearch || previous.outboundDateEnd != alert.outboundDateEnd ||
+                previous.returnDateEnd != alert.returnDateEnd ||
                 previous.directOnly != alert.directOnly || previous.adults18Plus != alert.adults18Plus ||
                 previous.minorPassengersJson != alert.minorPassengersJson
             )
@@ -73,6 +75,7 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
             notificationPolicyVersion = (previous?.notificationPolicyVersion ?: alert.notificationPolicyVersion) +
                 if (maximumChanged) 1 else 0,
             candidateRotation = previous?.candidateRotation ?: alert.candidateRotation,
+            datePairRotation = if (routeChanged) 0 else (previous?.datePairRotation ?: alert.datePairRotation),
             nextDueAt = nextDueAt,
         )
         dao.putAlert(saved)
@@ -105,33 +108,83 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
         if (currentAlert.criteriaVersion != alert.criteriaVersion) return false
         val previous = dao.getResult(alertId)
         val verified = outcome.offers.minByOrNull { it.totalCop }
-        val criteria = "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}|${alert.returnDate.ifBlank { "one-way" }}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}"
+        val criteria = alertCriteriaKey(alert)
+        val sameAttemptCriteria = previous?.attemptCriteria == criteria
+        val sameVerifiedCriteria = previous?.verifiedCriteria == criteria
+        val requestedPairCount = outcome.datePairCount.coerceIn(1, 49)
+        val scannedIndices = (outcome.datePairScannedIndices.ifEmpty {
+            if (outcome.datePairScanned) listOf(outcome.datePairIndex) else emptyList()
+        }).filter { it in 0 until requestedPairCount }.distinct()
+        val incompleteIndices = (outcome.datePairIncompleteIndices.ifEmpty {
+            if (outcome.datePairScanned && outcome.candidateExplorationLimited) listOf(outcome.datePairIndex) else emptyList()
+        }).filter { it in 0 until requestedPairCount }.toSet()
+        val attemptedIndices = (outcome.datePairAttemptedIndices.ifEmpty {
+            if (outcome.datePairScanned) listOf(outcome.datePairIndex) else emptyList()
+        }).filter { it in 0 until requestedPairCount }.distinct()
+        val resetFlexibleCycle = alert.flexibleDateSearch && scannedIndices.isNotEmpty() && sameAttemptCriteria &&
+            (previous.datePairCount != requestedPairCount || hasCompletedDatePairCycle(previous))
+        val storedPairCount = if (alert.flexibleDateSearch && scannedIndices.isEmpty() && sameAttemptCriteria) {
+            previous.datePairCount
+        } else requestedPairCount
+        val priorOffers = if (alert.flexibleDateSearch && sameVerifiedCriteria && !resetFlexibleCycle) {
+            previous.verifiedOffersJson?.let { runCatching { kotlinx.serialization.json.Json.decodeFromString<List<com.flightnotifications.app.domain.model.VerifiedRoundTripOffer>>(it) }.getOrNull() }.orEmpty()
+        } else emptyList()
+        val cycleOffers = if (alert.flexibleDateSearch) {
+            (priorOffers + outcome.offers).distinctBy { it.fingerprint }.sortedBy { it.totalCop }.take(MAX_ACCUMULATED_DATE_OFFERS)
+        } else {
+            outcome.offers.distinctBy { it.fingerprint }.sortedBy { it.totalCop }
+        }
+        val bestOffer = cycleOffers.minByOrNull { it.totalCop }
+        val progressMaskBefore = if (
+            alert.flexibleDateSearch && sameAttemptCriteria && !resetFlexibleCycle && previous.datePairCount == storedPairCount
+        ) previous.datePairProgressMask else 0L
+        val progressMask = if (alert.flexibleDateSearch) {
+            scannedIndices.fold(progressMaskBefore) { mask, index -> mask or (1L shl index) }
+        } else progressMaskBefore
+        val pairsChecked = if (alert.flexibleDateSearch) java.lang.Long.bitCount(progressMask) else 1
+        val incompleteMaskBefore = if (
+            alert.flexibleDateSearch && sameAttemptCriteria && !resetFlexibleCycle && previous.datePairCount == storedPairCount
+        ) previous.datePairIncompleteMask else 0L
+        val incompleteMask = if (alert.flexibleDateSearch) {
+            scannedIndices.fold(incompleteMaskBefore) { mask, index ->
+                val bit = 1L shl index
+                if (index in incompleteIndices) mask or bit else mask and bit.inv()
+            }
+        } else incompleteMaskBefore
+        val persistedStatus = if (alert.flexibleDateSearch && bestOffer != null) "VERIFICADO" else outcome.status
         dao.putResult(
             FlightAlertResultEntity(
                 alertId = alertId,
-                status = outcome.status,
+                status = persistedStatus,
                 lastAttemptAt = outcome.attemptAtMillis,
                 attemptCriteria = criteria,
                 attemptMaximumCop = alert.maxTotalCop,
                 networkReceivedAt = outcome.networkReceivedAtMillis,
                 lastError = outcome.error,
-                lastVerifiedTotalCop = verified?.totalCop ?: previous?.lastVerifiedTotalCop,
-                lastVerifiedAt = verified?.let { outcome.networkReceivedAtMillis } ?: previous?.lastVerifiedAt,
-                verifiedCriteria = if (verified != null) criteria else previous?.verifiedCriteria,
-                selectedOfferJson = verified?.let { kotlinx.serialization.json.Json.encodeToString(it) }
-                    ?: previous?.selectedOfferJson,
+                lastVerifiedTotalCop = bestOffer?.totalCop ?: if (resetFlexibleCycle) null else previous?.lastVerifiedTotalCop,
+                lastVerifiedAt = verified?.let { outcome.networkReceivedAtMillis }
+                    ?: if (resetFlexibleCycle) null else previous?.lastVerifiedAt,
+                verifiedCriteria = if (bestOffer != null) criteria else if (resetFlexibleCycle) null else previous?.verifiedCriteria,
+                selectedOfferJson = bestOffer?.let { kotlinx.serialization.json.Json.encodeToString(it) }
+                    ?: if (resetFlexibleCycle) null else previous?.selectedOfferJson,
                 airlinesJson = kotlinx.serialization.json.Json.encodeToString(outcome.airlines),
                 candidatesConsidered = outcome.candidatesConsidered,
                 candidateLimit = outcome.candidateLimit,
-                explorationLimited = outcome.explorationLimited,
+                explorationLimited = if (alert.flexibleDateSearch) {
+                    pairsChecked < storedPairCount || incompleteMask != 0L
+                } else outcome.explorationLimited,
                 accountBalanceAtStart = outcome.accountBalanceAtStart,
                 flightGetsStarted = outcome.flightGetsStarted,
                 googleFlightsUrl = outcome.googleFlightsUrl,
-                verifiedOffersJson = if (verified != null) {
-                    kotlinx.serialization.json.Json.encodeToString(outcome.offers.distinctBy { it.fingerprint }.sortedBy { it.totalCop })
-                } else {
-                    previous?.verifiedOffersJson
-                },
+                verifiedOffersJson = cycleOffers.takeIf { it.isNotEmpty() }?.let { kotlinx.serialization.json.Json.encodeToString(it) }
+                    ?: if (resetFlexibleCycle) null else previous?.verifiedOffersJson,
+                datePairsChecked = pairsChecked,
+                datePairCount = storedPairCount,
+                datePairProgressMask = progressMask,
+                datePairIncompleteMask = incompleteMask,
+                candidatesCompleted = outcome.candidatesCompleted,
+                candidateFailures = outcome.candidateFailures,
+                accountAlias = outcome.accountAlias,
             ),
         )
         return true
@@ -145,6 +198,23 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
 
     suspend fun advanceCandidateRotation(alert: FlightAlertEntity) =
         dao.advanceCandidateRotation(alert.id, alert.criteriaVersion)
+
+    suspend fun advanceDatePairRotation(alert: FlightAlertEntity, outcome: AlertSearchResult) {
+        if (outcome.datePairCount > 1) {
+            val attempted = outcome.datePairAttemptedIndices.ifEmpty {
+                if (outcome.datePairScanned) listOf(outcome.datePairIndex) else emptyList()
+            }
+            attempted.forEach { index ->
+                dao.advanceDatePairRotation(alert.id, alert.criteriaVersion, index, outcome.datePairCount)
+            }
+        }
+    }
+
+    private fun hasCompletedDatePairCycle(result: FlightAlertResultEntity): Boolean {
+        val count = result.datePairCount.coerceIn(1, 49)
+        val completeMask = (1L shl count) - 1L
+        return (result.datePairProgressMask and completeMask) == completeMask
+    }
 
     suspend fun setEnabled(id: String, enabled: Boolean) {
         val alert = dao.getAlert(id) ?: return
@@ -169,5 +239,17 @@ class FlightAlertRepository(private val dao: FlightAlertDao) : NotificationOutbo
             createdAt = now, updatedAt = now, nextDueAt = if (enabled) now else null,
             adults18Plus = adults18Plus, minorPassengersJson = Json.encodeToString(minors),
         )
+    }
+
+    private fun alertCriteriaKey(alert: FlightAlertEntity): String = if (!alert.flexibleDateSearch) {
+        "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}|${alert.returnDate.ifBlank { "one-way" }}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}"
+    } else {
+        val outboundEnd = alert.outboundDateEnd.ifBlank { alert.outboundDate }
+        val returnEnd = alert.returnDateEnd.ifBlank { alert.returnDate }
+        "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}..$outboundEnd|${if (alert.returnDate.isBlank()) "one-way" else "${alert.returnDate}..$returnEnd"}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}|flexible=true"
+    }
+
+    private companion object {
+        const val MAX_ACCUMULATED_DATE_OFFERS = 12
     }
 }

@@ -10,6 +10,7 @@ import com.flightnotifications.app.domain.model.AlertSearchResult
 import kotlinx.coroutines.CancellationException
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.Instant
 
 class FlightAlertWorker(
     appContext: Context,
@@ -19,6 +20,12 @@ class FlightAlertWorker(
 
     override suspend fun doWork(): Result {
         val now = System.currentTimeMillis()
+        val workerRunId = id.toString()
+        val trigger = inputData.getString("trigger") ?: "existing_work"
+        var finalState = "running"
+        container.flightDiagnosticLog.record(
+            "scheduler_worker_started worker_run_id=$workerRunId trigger=$trigger attempt=$runAttemptCount required_network=CONNECTED started_at_ms=$now",
+        )
         return try {
             // Recover any notice interrupted between NotificationManager.notify() and its Room commit.
             // This runs before new searches and does not consume SerpApi requests.
@@ -28,11 +35,14 @@ class FlightAlertWorker(
                     .entries.joinToString(",") { "${it.key}:${it.value}" }
                 container.flightDiagnosticLog.record("notification_outbox_recovery processed=${recoveredNotifications.size} outcomes={$counts}")
             }
-            val today = LocalDate.now(COLOMBIA_ZONE)
             // Expire enabled alerts at the first coordinator run after the local departure day,
             // even when their next scheduled review would otherwise be later.
             val expired = container.flightAlertRepository.enabledAlerts()
-                .filter { today.isAfter(LocalDate.parse(it.outboundDate)) }
+                .filter { alert ->
+                    val zone = container.airportCatalog.timeZoneFor(alert.originIata) ?: COLOMBIA_ZONE
+                    val finalOutboundDate = if (alert.flexibleDateSearch) alert.outboundDateEnd.ifBlank { alert.outboundDate } else alert.outboundDate
+                    Instant.ofEpochMilli(now).atZone(zone).toLocalDate().isAfter(LocalDate.parse(finalOutboundDate))
+                }
             expired.forEach {
                 container.flightAlertRepository.deferExpired(it.id)
                 container.flightAlertRepository.clearExpiredNotificationState(it.id)
@@ -40,30 +50,36 @@ class FlightAlertWorker(
             val due = container.flightAlertRepository.dueAlerts(now)
             val expiredIds = expired.mapTo(mutableSetOf()) { it.id }
             val activeDue = due.filterNot { it.id in expiredIds }
-            when (AutomaticReviewPolicy.decide(activeDue.size, container.notificationDispatcher.notificationsAllowed())) {
+            when (AutomaticReviewPolicy.decide(activeDue.size)) {
                 AutomaticReviewPolicy.Decision.NO_DUE_ALERTS -> {
-                    container.flightDiagnosticLog.record("scheduler_tick no_due_alerts expired_alerts=${expired.size} flight_gets_started=0")
-                    return Result.success()
-                }
-                AutomaticReviewPolicy.Decision.NOTIFICATIONS_BLOCKED -> {
-                    container.flightDiagnosticLog.record("scheduler_tick blocked cause=notification_permission_or_channel_disabled due_alerts=${activeDue.size} flight_gets_started=0")
+                    container.flightDiagnosticLog.record("scheduler_tick worker_run_id=$workerRunId no_due_alerts expired_alerts=${expired.size} flight_gets_started=0")
+                    finalState = "success_no_due_alerts"
                     return Result.success()
                 }
                 AutomaticReviewPolicy.Decision.RUN -> Unit
             }
-            container.flightDiagnosticLog.record("scheduler_tick due_alerts=${activeDue.size} worker_run_attempt=$runAttemptCount max_batch_gets=${com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_BATCH}")
+            container.flightDiagnosticLog.record("scheduler_tick worker_run_id=$workerRunId due_alerts=${activeDue.size} worker_run_attempt=$runAttemptCount max_batch_gets=${com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_BATCH}")
             val byId = activeDue.associateBy { it.id }
-            container.serpApiRepository.runAlertBatch(activeDue, afterResults = { outcomes ->
+            container.serpApiRepository.runAlertBatch(activeDue, source = "scheduled_$trigger", afterResults = { outcomes ->
                 persistAndDispatch(outcomes, byId)
             })
+            finalState = "success_search_batch_complete"
             Result.success()
         } catch (cancelled: CancellationException) {
+            finalState = "cancelled"
             throw cancelled
         } catch (failure: Exception) {
+            finalState = "failure_${failure.javaClass.simpleName}"
             runCatching {
-                container.flightDiagnosticLog.record("scheduler_worker_failed category=${failure.javaClass.simpleName}")
+                container.flightDiagnosticLog.record("scheduler_worker_failed worker_run_id=$workerRunId category=${failure.javaClass.simpleName}")
             }
             Result.failure()
+        } finally {
+            runCatching {
+                container.flightDiagnosticLog.record(
+                    "scheduler_worker_finished worker_run_id=$workerRunId trigger=$trigger result=$finalState duration_ms=${(System.currentTimeMillis() - now).coerceAtLeast(0)}",
+                )
+            }
         }
     }
 
@@ -79,7 +95,8 @@ class FlightAlertWorker(
                 container.flightDiagnosticLog.record("scheduler_result_discarded alert_id=${original.id.take(8)} reason=criteria_version_changed")
                 return@forEach
             }
-            if (outcome.candidatesConsidered > 0) container.flightAlertRepository.advanceCandidateRotation(original)
+            if (outcome.flightGetsStarted > 0) container.flightAlertRepository.advanceCandidateRotation(original)
+            container.flightAlertRepository.advanceDatePairRotation(original, outcome)
             if (current.enabled && current.criteriaVersion == original.criteriaVersion && current.notificationPolicyVersion == original.notificationPolicyVersion && outcome.status == "VERIFICADO") {
                 val dispatched = container.notificationDispatcher.dispatchIfEligible(current, outcome, container.flightAlertRepository)
                 container.flightDiagnosticLog.record("notification_dispatch alert_id=${original.id.take(8)} result=$dispatched")

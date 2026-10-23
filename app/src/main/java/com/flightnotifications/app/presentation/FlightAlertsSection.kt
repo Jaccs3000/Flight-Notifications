@@ -42,6 +42,11 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -91,6 +96,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -102,23 +108,24 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.flightnotifications.app.data.local.FlightAlertEntity
 import com.flightnotifications.app.data.repository.AlertWithResult
-import com.flightnotifications.app.domain.validation.ColombianAirport
-import com.flightnotifications.app.domain.validation.ColombianAirportCatalog
+import com.flightnotifications.app.domain.validation.AirportLocation
+import com.flightnotifications.app.domain.validation.AirportCatalog
 import com.flightnotifications.app.domain.model.VerifiedRoundTripOffer
 import com.flightnotifications.app.domain.model.FlightDepartureTime
 import com.flightnotifications.app.domain.model.MinorPassenger
+import com.flightnotifications.app.domain.model.FlexibleFlightDates
 import com.flightnotifications.app.domain.model.PassengerSelection
 import com.flightnotifications.app.ui.theme.FlightAppColors
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import java.text.NumberFormat
-import java.text.Normalizer
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -142,6 +149,9 @@ private data class AlertEditorFields(
     val minors: List<MinorPassenger> = emptyList(),
     val originQuery: String = "",
     val destinationQuery: String = "",
+    val flexibleDates: Boolean = false,
+    val outboundEnd: LocalDate = outbound,
+    val returnEnd: LocalDate? = returning,
 )
 
 private object CopIntegerVisualTransformation : VisualTransformation {
@@ -176,64 +186,54 @@ private fun editorFieldsFrom(alert: FlightAlertEntity): AlertEditorFields = Aler
     startTime = initialStartTime(alert),
     adults18Plus = alert.adults18Plus,
     minors = runCatching { Json.decodeFromString<List<MinorPassenger>>(alert.minorPassengersJson) }.getOrDefault(emptyList()),
+    flexibleDates = alert.flexibleDateSearch,
+    outboundEnd = alert.outboundDateEnd.takeIf(String::isNotBlank)?.let(LocalDate::parse) ?: LocalDate.parse(alert.outboundDate),
+    returnEnd = alert.returnDateEnd.takeIf(String::isNotBlank)?.let(LocalDate::parse)
+        ?: alert.returnDate.takeIf(String::isNotBlank)?.let(LocalDate::parse),
 )
 
-private fun airportLabel(airport: ColombianAirport): String = "${airport.city.lowercase(Locale.forLanguageTag("es-CO")).replaceFirstChar { it.titlecase(Locale.forLanguageTag("es-CO")) }} · ${airport.iata}"
+private fun airportCountryName(airport: AirportLocation): String =
+    Locale.Builder().setRegion(airport.country).build()
+        .getDisplayCountry(Locale.forLanguageTag("es-CO")).ifBlank { airport.country }
 
-private fun airportFullName(code: String, catalog: ColombianAirportCatalog): String {
+private fun airportCityCountryName(code: String, catalog: AirportCatalog): String = catalog.find(code)?.let {
+    "${it.city} (${airportCountryName(it)})"
+} ?: code
+
+private fun isAlertExpired(alert: FlightAlertEntity, catalog: AirportCatalog): Boolean {
+    val zone = catalog.timeZoneFor(alert.originIata) ?: COLOMBIA_ZONE
+    val finalOutboundDate = if (alert.flexibleDateSearch) alert.outboundDateEnd.ifBlank { alert.outboundDate } else alert.outboundDate
+    return Instant.now().atZone(zone).toLocalDate().isAfter(LocalDate.parse(finalOutboundDate))
+}
+
+private fun airportFullName(code: String, catalog: AirportCatalog): String {
     val airport = catalog.find(code) ?: return code
     val locale = Locale.forLanguageTag("es-CO")
     val name = airport.name.trim().split(Regex("\\s+")).joinToString(" ") { word ->
         word.lowercase(locale).replaceFirstChar { it.titlecase(locale) }
-    }.replace(Regex("(?i)nuñez"), "Núñez")
+    }.replace(Regex("(?i)nunez"), "Núñez")
+        .replace(Regex("(?i)matecana"), "Matecaña")
         .replace(Regex("(?i)aragon"), "Aragón")
-    return "$name (${airport.iata})"
+    return "$name (${airport.iata}) · ${airportCountryName(airport)}"
 }
 
-internal fun airportShortName(airport: ColombianAirport): String =
+internal fun airportShortName(airport: AirportLocation): String =
     Regex("\\s[-–—]\\s").find(airport.name)?.let { airport.name.substring(it.range.last + 1).trim() } ?: airport.name
 
-private fun airportDisplayCity(airport: ColombianAirport): String {
+private fun airportDisplayCity(airport: AirportLocation): String {
     val separator = Regex("\\s[-–—]\\s").find(airport.name)
     val city = separator?.let { airport.name.substring(0, it.range.first).trim() } ?: airport.city
     val locale = Locale.forLanguageTag("es-CO")
     return city.lowercase(locale).replaceFirstChar { it.titlecase(locale) }
 }
 
-private fun normalizeAirportQuery(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
-    .replace(Regex("\\p{Mn}+"), "")
-    .lowercase(Locale.ROOT)
-    .trim()
-
-private fun airportSuggestions(query: String, catalog: ColombianAirportCatalog): List<ColombianAirport> {
-    val normalized = normalizeAirportQuery(query)
-    if (normalized.isBlank()) {
-        val popular = listOf("BOG", "MDE", "CTG", "CLO", "BAQ", "SMR", "ADZ", "PEI")
-        return popular.mapNotNull(catalog::find)
-    }
-    return catalog.airports
-        .filter { airport ->
-            listOf(airport.iata, airport.city, airport.name, airport.department)
-                .any { normalizeAirportQuery(it).contains(normalized) }
-        }
-        .sortedWith(
-            compareBy<ColombianAirport> {
-                when {
-                    normalizeAirportQuery(it.iata) == normalized -> 0
-                    normalizeAirportQuery(it.city).startsWith(normalized) -> 1
-                    normalizeAirportQuery(it.name).startsWith(normalized) -> 2
-                    else -> 3
-                }
-            }.thenBy { it.city },
-        )
-        .take(7)
-}
+private fun airportSuggestions(query: String, catalog: AirportCatalog): List<AirportLocation> = catalog.suggestions(query)
 
 @Composable
 private fun AirportSuggestionList(
     query: String,
-    catalog: ColombianAirportCatalog,
-    onSelect: (ColombianAirport) -> Unit,
+    catalog: AirportCatalog,
+    onSelect: (AirportLocation) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val suggestions = remember(query, catalog.airports) { airportSuggestions(query, catalog) }
@@ -265,7 +265,7 @@ private fun AirportSuggestionList(
                         AppIcon(AppIcon.Flight, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("${airport.city} · ${airport.iata}", fontWeight = FontWeight.Medium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            Text(airportShortName(airport), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text("${airportShortName(airport)} · ${airportCountryName(airport)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -279,10 +279,10 @@ private fun AirportAutocompleteField(
     label: String,
     selectedCode: String,
     query: String,
-    catalog: ColombianAirportCatalog,
+    catalog: AirportCatalog,
     tag: String,
     onQueryChange: (String) -> Unit,
-    onSelect: (ColombianAirport) -> Unit,
+    onSelect: (AirportLocation) -> Unit,
     modifier: Modifier = Modifier,
     showSuggestionsInParent: Boolean = false,
     onFieldFocus: ((Boolean) -> Unit)? = null,
@@ -321,7 +321,7 @@ private fun AirportAutocompleteField(
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(label, color = accent, style = MaterialTheme.typography.labelSmall)
                         Text("${airportDisplayCity(selectedAirport)} (${selectedAirport.iata})", style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp, lineHeight = 11.sp), fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        Text(airportShortName(selectedAirport), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 10.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text("${airportShortName(selectedAirport)} · ${airportCountryName(selectedAirport)}", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 10.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                     IconButton(
                         onClick = {
@@ -394,7 +394,7 @@ private fun AirportAutocompleteField(
                                 AppIcon(AppIcon.Flight, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text("${airport.city} · ${airport.iata}", fontWeight = FontWeight.Medium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                    Text(airportShortName(airport), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text("${airportShortName(airport)} · ${airportCountryName(airport)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -423,7 +423,7 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
     var pendingEnableId by remember { mutableStateOf<String?>(null) }
     var expandedAlertId by remember { mutableStateOf<String?>(null) }
     var showCatalog by remember { mutableStateOf(false) }
-    val activeCount = state.alerts.count { it.alert.enabled && !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(it.alert.outboundDate)) }
+    val activeCount = state.alerts.count { it.alert.enabled && !isAlertExpired(it.alert, viewModel.airportCatalog) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         notificationsAllowed = viewModel.notificationsAllowed()
         val id = pendingEnableId
@@ -444,14 +444,14 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Alertas de vuelos", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("$activeCount activas · ${state.alerts.size} configuradas · rutas nacionales en Colombia", style = MaterialTheme.typography.bodyMedium)
+            Text("$activeCount activas · ${state.alerts.size} configuradas · vuelos en todo el mundo", style = MaterialTheme.typography.bodyMedium)
         }
 
         if (activeCount > 0 && !notificationsAllowed) {
             Card {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Las alertas siguen configuradas, pero Android tiene desactivadas las notificaciones. Se suspenden las búsquedas automáticas para no consumir cuota; la búsqueda manual sigue disponible.",
+                        "Las búsquedas automáticas continúan, pero Android tiene desactivadas las notificaciones y no recibirás avisos de nuevas tarifas.",
                         color = MaterialTheme.colorScheme.error,
                     )
                     OutlinedButton(onClick = {
@@ -475,7 +475,7 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
                 }
                 state.alerts.forEach { item ->
                     val alert = item.alert
-                    val expired = LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))
+                    val expired = isAlertExpired(alert, viewModel.airportCatalog)
                     AlertSummaryCard(
                         item = item,
                         airportCatalog = viewModel.airportCatalog,
@@ -504,9 +504,9 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
                     )
                     if (item != state.alerts.lastOrNull()) HorizontalDivider()
                 }
-                val active = state.alerts.map { it.alert }.filter { it.enabled && !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(it.outboundDate)) }
+                val active = state.alerts.map { it.alert }.filter { it.enabled && !isAlertExpired(it, viewModel.airportCatalog) }
                 val monthlyLow = active.sumOf { 720L / it.frequencyHours * if (it.returnDate.isBlank()) 1L else 2L }
-                val monthlyHigh = active.sumOf { 720L / it.frequencyHours * if (it.returnDate.isBlank()) 1L else 4L }
+                val monthlyHigh = active.sumOf { 720L / it.frequencyHours * if (it.returnDate.isBlank()) 1L else com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_ALERT.toLong() }
                 Text("Consumo automático estimado: $monthlyLow–$monthlyHigh GET de vuelos por 30 días, más revisiones manuales. Es una proyección; el máximo local actual es $maximumLocalGets.", style = MaterialTheme.typography.bodySmall)
                 if (monthlyLow > maximumLocalGets || monthlyHigh > maximumLocalGets) {
                     Text("La configuración activa supera el presupuesto local estimado; algunas revisiones podrían quedar pendientes. Se respetará el límite global de cuota.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -533,7 +533,7 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Programación automática", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(state.schedulingStatus)
-                Text("Un solo coordinador periódico con red conectada. Las frecuencias son objetivos: Android puede aplazar la ejecución por ahorro de batería, Doze, falta de red o apagado del teléfono.", style = MaterialTheme.typography.bodySmall)
+                Text("Un solo coordinador periódico con red conectada. Las frecuencias son objetivos: Android puede aplazar la ejecución por ahorro de batería, Doze o falta de red. La búsqueda se ejecuta aunque los avisos estén desactivados, pero no recibirás notificaciones. Si el sistema fuerza el cierre, al volver a abrir la app se reprograma el trabajo y se intentan recuperar revisiones vencidas.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = viewModel::checkScheduling, modifier = Modifier.primaryButtonTarget()) { Text("Comprobar programación · sin llamadas API") }
             }
         }
@@ -561,12 +561,17 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
                             onSelect = { fields = fields.copy(destination = it.iata, destinationQuery = "") },
                         )
                     }
-                    Text("Solo aeropuertos incluidos en el catálogo nacional local.", style = MaterialTheme.typography.bodySmall)
+                    Text("Busca aeropuertos por ciudad, nombre o código IATA en cualquier país.", style = MaterialTheme.typography.bodySmall)
                     TripTypeSelector(fields.returning != null, onSelect = { roundTrip ->
                         fields = fields.copy(returning = if (roundTrip) fields.returning ?: fields.outbound.plusDays(3) else null)
                     })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DateEditorButton("Ida", fields.outbound, LocalDate.now(COLOMBIA_ZONE), Modifier.weight(1f)) { selected ->
+                        DateEditorButton(
+                            "Ida",
+                            fields.outbound,
+                            LocalDate.now(viewModel.airportCatalog.timeZoneFor(fields.origin) ?: COLOMBIA_ZONE),
+                            Modifier.weight(1f),
+                        ) { selected ->
                             val nextReturn = fields.returning?.let { if (it.isAfter(selected)) it else selected.plusDays(1) }
                             fields = fields.copy(outbound = selected, returning = nextReturn)
                             if (nextReturn != null) Handler(Looper.getMainLooper()).post {
@@ -604,7 +609,9 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("alert-form-error")) }
                     state.alerts.map { it.alert }.filter { it.enabled }.let { active ->
                         val existing = active.filterNot { it.id == editorId }
-                        val projected = existing.sumOf { 720L / it.frequencyHours * if (it.returnDate.isBlank()) 1L else 4L } + 720L / fields.frequency * if (fields.returning == null) 1L else 4L
+                        val maxRoundTripGets = com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_ALERT.toLong()
+                        val projected = existing.sumOf { 720L / it.frequencyHours * if (it.returnDate.isBlank()) 1L else maxRoundTripGets } +
+                            720L / fields.frequency * if (fields.returning == null) 1L else maxRoundTripGets
                         Text("Estimación alta con esta configuración: $projected GET/30 días si se activa. Presupuesto local: $maximumLocalGets; quedará activa al guardarla.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -625,7 +632,7 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
         AlertDialog(
             onDismissRequest = viewModel::dismissReviewConfirmation,
             title = { Text("Revisar precios ahora") },
-            text = { Text("${reviewAlert.originIata} ${if (reviewAlert.returnDate.isBlank()) "→" else "↔"} ${reviewAlert.destinationIata}, ${reviewAlert.outboundDate}${reviewAlert.returnDate.takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty()}. ${alertPassengerSummary(reviewAlert)}. Se comprobará la cuenta una vez; ${if (reviewAlert.returnDate.isBlank()) "la búsqueda de solo ida consume 1 GET de vuelos" else "la ida y vuelta puede iniciar hasta 4 GET (1 inicial + hasta 3 regresos asociados)"}. Cancelar inicia 0 GET. La revisión manual no activa alertas pausadas.") },
+            text = { Text("${reviewAlert.originIata} ${if (reviewAlert.returnDate.isBlank()) "→" else "↔"} ${reviewAlert.destinationIata}, ${reviewAlert.outboundDate}${reviewAlert.returnDate.takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty()}. ${alertPassengerSummary(reviewAlert)}. Se comprobará la cuenta una vez; ${if (reviewAlert.returnDate.isBlank()) "la búsqueda de solo ida consume 1 GET de vuelos" else "la ida y vuelta puede iniciar hasta 9 GET (1 inicial + hasta 8 regresos asociados)"}. Cancelar inicia 0 GET. La revisión manual no activa alertas pausadas.") },
             confirmButton = { TextButton(onClick = viewModel::confirmReview, modifier = Modifier.secondaryButtonTarget()) { Text("Continuar") } },
             dismissButton = { TextButton(onClick = viewModel::dismissReviewConfirmation, modifier = Modifier.secondaryButtonTarget()) { Text("Cancelar") } },
         )
@@ -656,7 +663,6 @@ private fun FlightAlertsLegacySection(viewModel: FlightAlertsViewModel, maximumL
 @Composable
 fun FlightAlertsSection(
     viewModel: FlightAlertsViewModel,
-    maximumLocalGets: Int,
     onCreateAlert: () -> Unit,
     onEditAlert: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
@@ -682,12 +688,16 @@ fun FlightAlertsSection(
         if (granted && id != null) viewModel.setEnabled(id, true)
         else if (!granted) viewModel.notificationPermissionDenied()
     }
-    val activeAlerts = state.alerts.filter {
-        it.alert.enabled && !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(it.alert.outboundDate))
+    val orderedAlerts = remember(state.alerts, state.alertOrder) {
+        val byId = state.alerts.associateBy { it.alert.id }
+        orderedAlertIds(state.alerts.map { it.alert.id }, state.alertOrder).mapNotNull(byId::get)
+    }
+    val activeAlerts = orderedAlerts.filter {
+        it.alert.enabled && !isAlertExpired(it.alert, viewModel.airportCatalog)
     }
     val activeCount = activeAlerts.size
-    val visibleAlerts = state.alerts.filter { item ->
-        val active = item.alert.enabled && !LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(item.alert.outboundDate))
+    val visibleAlerts = orderedAlerts.filter { item ->
+        val active = item.alert.enabled && !isAlertExpired(item.alert, viewModel.airportCatalog)
         when (filter) {
             AlertListFilter.ALL -> true
             AlertListFilter.ACTIVE -> active
@@ -725,7 +735,7 @@ fun FlightAlertsSection(
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         AppIcon(AppIcon.Notifications, null, tint = FlightAppColors.onWarningContainer)
-                        Text("Android tiene desactivadas las notificaciones. Las revisiones automáticas están suspendidas para no consumir cuota.", color = FlightAppColors.onWarningContainer)
+                        Text("Las búsquedas automáticas continúan, pero no recibirás notificaciones mientras estén desactivadas en Android.", color = FlightAppColors.onWarningContainer)
                     }
                     OutlinedButton(onClick = {
                         context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
@@ -742,13 +752,14 @@ fun FlightAlertsSection(
             ) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (state.alerts.isEmpty()) "Aún no tienes alertas" else "No hay alertas en este filtro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Crea una alerta para vigilar una ruta nacional y un rango de fechas.", color = MaterialTheme.colorScheme.secondary)
+                    Text("Crea una alerta para vigilar cualquier ruta y un rango de fechas.", color = MaterialTheme.colorScheme.secondary)
                 }
             }
         } else {
-            visibleAlerts.forEach { item ->
+            val visibleIds = visibleAlerts.map { it.alert.id }
+            visibleAlerts.forEachIndexed { index, item ->
                 val alert = item.alert
-                val expired = LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))
+                val expired = isAlertExpired(alert, viewModel.airportCatalog)
                 SketchAlertCard(
                     item = item,
                     airportCatalog = viewModel.airportCatalog,
@@ -759,6 +770,10 @@ fun FlightAlertsSection(
                     onEdit = { onEditAlert(alert.id) },
                     onDelete = { viewModel.requestDelete(alert.id) },
                     onSearch = { viewModel.requestReview(alert.id) },
+                    canMoveUp = index > 0,
+                    canMoveDown = index < visibleAlerts.lastIndex,
+                    onMoveUp = { viewModel.moveAlert(alert.id, visibleIds, -1) },
+                    onMoveDown = { viewModel.moveAlert(alert.id, visibleIds, 1) },
                     onToggle = { enabled ->
                         if (!enabled) viewModel.setEnabled(alert.id, false)
                         else if (notificationsAllowed) viewModel.setEnabled(alert.id, true)
@@ -774,17 +789,7 @@ fun FlightAlertsSection(
             }
         }
 
-        val monthlyLow = activeAlerts.sumOf { 720L / it.alert.frequencyHours * 2L }
-        val monthlyHigh = activeAlerts.sumOf { 720L / it.alert.frequencyHours * 4L }
-        if (activeAlerts.isNotEmpty() && monthlyHigh > maximumLocalGets) {
-            Surface(color = FlightAppColors.warningContainer, shape = MaterialTheme.shapes.medium) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    AppIcon(AppIcon.Info, null, modifier = Modifier.size(18.dp), tint = FlightAppColors.onWarningContainer)
-                    Text("Estimación automática: $monthlyLow–$monthlyHigh consultas de vuelos por 30 días. Algunas revisiones podrían esperar capacidad del presupuesto local ($maximumLocalGets).", color = FlightAppColors.onWarningContainer, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-        state.message?.let {
+        state.message?.takeUnless { it.startsWith("Tarifa de ") }?.let {
             FeedbackBanner(it, isError = false, modifier = Modifier.testTag("alert-feedback-message"))
         }
         state.error?.let { FeedbackBanner(it, isError = true) }
@@ -794,7 +799,7 @@ fun FlightAlertsSection(
     if (reviewAlert != null) AlertDialog(
         onDismissRequest = viewModel::dismissReviewConfirmation,
         title = { Text("Revisar precios ahora") },
-            text = { Text("${reviewAlert.originIata} ${if (reviewAlert.returnDate.isBlank()) "→" else "↔"} ${reviewAlert.destinationIata}, ${reviewAlert.outboundDate}${reviewAlert.returnDate.takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty()}. ${alertPassengerSummary(reviewAlert)}. ${if (reviewAlert.returnDate.isBlank()) "La búsqueda de solo ida consume 1 GET" else "La ida y vuelta puede iniciar hasta 4 GET"}. Cancelar inicia 0 GET. La revisión manual no activa una alerta pausada.") },
+            text = { Text("${reviewAlert.originIata} ${if (reviewAlert.returnDate.isBlank()) "→" else "↔"} ${reviewAlert.destinationIata}, ${reviewAlert.outboundDate}${reviewAlert.returnDate.takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty()}. ${alertPassengerSummary(reviewAlert)}. ${if (reviewAlert.returnDate.isBlank()) "La búsqueda de solo ida consume 1 GET" else "La ida y vuelta puede iniciar hasta 9 GET"}. Cancelar inicia 0 GET. La revisión manual no activa una alerta pausada.") },
         confirmButton = { TextButton(onClick = viewModel::confirmReview, modifier = Modifier.secondaryButtonTarget()) { Text("Continuar") } },
         dismissButton = { TextButton(onClick = viewModel::dismissReviewConfirmation, modifier = Modifier.secondaryButtonTarget()) { Text("Cancelar") } },
     )
@@ -823,7 +828,7 @@ private fun FeedbackBanner(message: String, isError: Boolean, modifier: Modifier
 @Composable
 internal fun SketchAlertCard(
     item: AlertWithResult,
-    airportCatalog: ColombianAirportCatalog,
+    airportCatalog: AirportCatalog,
     expired: Boolean,
     isRunning: Boolean,
     isChangingEnabled: Boolean = false,
@@ -832,6 +837,10 @@ internal fun SketchAlertCard(
     onDelete: () -> Unit,
     onSearch: () -> Unit,
     onToggle: (Boolean) -> Unit,
+    canMoveUp: Boolean = false,
+    canMoveDown: Boolean = false,
+    onMoveUp: () -> Unit = {},
+    onMoveDown: () -> Unit = {},
 ) {
     val alert = item.alert
     val result = item.result
@@ -844,7 +853,7 @@ internal fun SketchAlertCard(
         .filter(String::isNotBlank)
         .distinctBy { it.lowercase(Locale.ROOT) }
     var menuExpanded by remember(alert.id) { mutableStateOf(false) }
-    val tripDuration = alert.returnDate.takeIf(String::isNotBlank)?.let { returning ->
+    val tripDuration = alert.returnDate.takeIf { it.isNotBlank() && !alert.flexibleDateSearch }?.let { returning ->
         runCatching { java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(alert.outboundDate), LocalDate.parse(returning)) + 1 }.getOrNull()
     }
     val passengerSummary = alertPassengerSummary(alert)
@@ -860,10 +869,17 @@ internal fun SketchAlertCard(
     val actionMinWidth = with(density) {
         textMeasurer.measure(AnnotatedString("Ver resultados"), style = MaterialTheme.typography.labelLarge).size.width.toDp()
     } + 46.dp // Icon, gap and padding; both actions use the same minimum width.
-    val dateText = formatAlertDates(alert.outboundDate, alert.returnDate)
+    val dateText = formatAlertDates(alert, compact = true)
     val routeStyle = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold)
     val dateStyle = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold)
     val offerPrice = result?.lastVerifiedTotalCop
+    val partialRange = alert.flexibleDateSearch && result?.explorationLimited == true
+    val offerHeader = when {
+        current && partialRange -> "Mejor tarifa observada hasta ahora"
+        current && alert.flexibleDateSearch -> "Mejor tarifa observada en el rango"
+        current -> "Tarifa más baja observada"
+        else -> "Último resultado"
+    }
     val outboundDepartureTime = FlightDepartureTime.format(selectedOffer?.outbound?.firstOrNull()?.departureLocal)
     val returnDepartureTime = FlightDepartureTime.format(selectedOffer?.returning?.firstOrNull()?.departureLocal)
     val offerLayout = offerPrice?.let { price ->
@@ -946,6 +962,20 @@ internal fun SketchAlertCard(
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
+                                modifier = Modifier.testTag("move-alert-up-${alert.id}"),
+                                enabled = canMoveUp,
+                                text = { Text("Mover arriba") },
+                                leadingIcon = { AppIcon(AppIcon.ExpandLess, null, tint = MaterialTheme.colorScheme.secondary) },
+                                onClick = { menuExpanded = false; onMoveUp() },
+                            )
+                            DropdownMenuItem(
+                                modifier = Modifier.testTag("move-alert-down-${alert.id}"),
+                                enabled = canMoveDown,
+                                text = { Text("Mover abajo") },
+                                leadingIcon = { AppIcon(AppIcon.ExpandMore, null, tint = MaterialTheme.colorScheme.secondary) },
+                                onClick = { menuExpanded = false; onMoveDown() },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Editar alerta") },
                                 leadingIcon = { AppIcon(AppIcon.Edit, null, tint = MaterialTheme.colorScheme.secondary) },
                                 onClick = { menuExpanded = false; onEdit() },
@@ -984,8 +1014,15 @@ internal fun SketchAlertCard(
                         AlertOfferSummary(
                             price = offerPrice,
                             current = current,
+                            explorationLimited = result?.explorationLimited == true,
+                            flexibleDateSearch = alert.flexibleDateSearch,
+                            datePairsChecked = result?.datePairsChecked ?: 0,
+                            datePairCount = result?.datePairCount ?: 1,
+                            datePairsWithIncompleteOptions = result?.datePairIncompleteMask?.let(java.lang.Long::bitCount) ?: 0,
                             outboundDepartureTime = outboundDepartureTime,
                             returnDepartureTime = returnDepartureTime,
+                            outboundDepartureDate = if (alert.flexibleDateSearch) offerDepartureDate(selectedOffer?.outbound?.firstOrNull()?.departureLocal) else null,
+                            returnDepartureDate = if (alert.flexibleDateSearch) offerDepartureDate(selectedOffer?.returning?.firstOrNull()?.departureLocal) else null,
                             modifier = Modifier.weight(offerLayout.second.value),
                             alertId = alert.id,
                         )
@@ -997,8 +1034,15 @@ internal fun SketchAlertCard(
                             AlertOfferSummary(
                                 price = price,
                                 current = current,
+                                explorationLimited = result?.explorationLimited == true,
+                                flexibleDateSearch = alert.flexibleDateSearch,
+                                datePairsChecked = result?.datePairsChecked ?: 0,
+                                datePairCount = result?.datePairCount ?: 1,
+                                datePairsWithIncompleteOptions = result?.datePairIncompleteMask?.let(java.lang.Long::bitCount) ?: 0,
                                 outboundDepartureTime = outboundDepartureTime,
                                 returnDepartureTime = returnDepartureTime,
+                                outboundDepartureDate = if (alert.flexibleDateSearch) offerDepartureDate(selectedOffer?.outbound?.firstOrNull()?.departureLocal) else null,
+                                returnDepartureDate = if (alert.flexibleDateSearch) offerDepartureDate(selectedOffer?.returning?.firstOrNull()?.departureLocal) else null,
                                 modifier = Modifier.fillMaxWidth(),
                                 alertId = alert.id,
                             )
@@ -1040,38 +1084,27 @@ internal fun SketchAlertCard(
                     }
                 }
             })
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    Modifier.weight(1f).testTag("alert-review-meta-${alert.id}"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
-                    Text(
-                        result?.let { "Última revisión: ${formatShortLocal(it.lastAttemptAt)}" } ?: "Sin revisiones",
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                }
-                AlertDirectCaption(alert.directOnly, alert.id)
-            }
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val reviewButton: @Composable (Modifier) -> Unit = { buttonModifier ->
-                    OutlinedButton(
-                        onClick = onSearch,
-                        enabled = !isRunning,
-                        modifier = buttonModifier.primaryButtonTarget().testTag("alert-review-${alert.id}"),
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, Color(0xFF1767C9)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1767C9)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                    ) {
-                        AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(18.dp), tint = Color(0xFF1767C9))
-                        Text(if (isRunning) "Buscando…" else "Revisar", modifier = Modifier.padding(start = 4.dp), maxLines = 1, softWrap = false)
+            val reviewSummary = result?.let { "Última revisión: ${formatShortLocal(it.lastAttemptAt)}" } ?: "Sin revisiones"
+            if (density.fontScale > 1.15f) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    AlertReviewMeta(reviewSummary, alert.id, Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        AlertDirectCaption(alert.directOnly, alert.id)
                     }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AlertReviewMeta(reviewSummary, alert.id, Modifier.weight(1f))
+                    AlertDirectCaption(alert.directOnly, alert.id)
+                }
+            }
+            Box(Modifier.fillMaxWidth()) {
+                val reviewButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+                    ReviewFlightButton(
+                        modifier = buttonModifier.primaryButtonTarget().testTag("alert-review-${alert.id}"),
+                        onClick = onSearch,
+                        isRunning = isRunning,
+                    )
                 }
                 val resultsButton: @Composable (Modifier) -> Unit = { buttonModifier ->
                     Button(onClick = onOpenDetail, modifier = buttonModifier.primaryButtonTarget().testTag("alert-results-${alert.id}"), shape = CircleShape, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)) {
@@ -1083,6 +1116,78 @@ internal fun SketchAlertCard(
             }
             }
         }
+    }
+}
+
+@Composable
+private fun ReviewFlightButton(
+    modifier: Modifier,
+    onClick: () -> Unit,
+    isRunning: Boolean,
+    idleLabel: String = "Revisar",
+    canStart: Boolean = !isRunning,
+) {
+    val phase = if (isRunning) {
+        val transition = rememberInfiniteTransition(label = "flight-review-blink")
+        val animatedPhase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 480),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "flight-review-button-color",
+        )
+        animatedPhase
+    } else {
+        0f
+    }
+    val pulseColor = when {
+        !isRunning -> Color(0xFF1767C9)
+        phase < 0.5f -> Color(0xFFF57C00)
+        else -> Color(0xFFC62828)
+    }
+    val pulseContentColor = when {
+        !isRunning -> Color(0xFF1767C9)
+        phase < 0.5f -> Color(0xFF18284D)
+        else -> Color.White
+    }
+    OutlinedButton(
+        onClick = onClick,
+        enabled = canStart,
+        modifier = modifier,
+        shape = CircleShape,
+        border = BorderStroke(if (isRunning) 2.dp else 1.dp, pulseColor),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = Color(0xFF1767C9),
+            containerColor = Color.White,
+            disabledContentColor = pulseContentColor,
+            disabledContainerColor = pulseColor,
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+    ) {
+        AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(18.dp), tint = pulseContentColor)
+        Text(if (isRunning) "Buscando…" else idleLabel, modifier = Modifier.padding(start = 4.dp), color = pulseContentColor, maxLines = 1, softWrap = false)
+    }
+}
+
+@Composable
+private fun AlertReviewMeta(text: String, alertId: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier.testTag("alert-review-meta-$alertId"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        AppIcon(AppIcon.Refresh, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
+        Text(
+            text,
+            modifier = Modifier.testTag("alert-review-meta-text-$alertId"),
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1109,7 +1214,7 @@ private fun AlertDirectCaption(directOnly: Boolean, alertId: String) {
 @Composable
 private fun AlertRouteAndDates(
     alert: FlightAlertEntity,
-    airportCatalog: ColombianAirportCatalog,
+    airportCatalog: AirportCatalog,
     dateText: String,
     tripDuration: Long?,
     passengerSummary: String,
@@ -1152,7 +1257,14 @@ private fun AlertRouteAndDates(
                 Box(contentAlignment = Alignment.Center) { AppIcon(AppIcon.Calendar, null, modifier = Modifier.size(18.dp), tint = Color(0xFF6D42C6)) }
             }
             Column(Modifier.weight(1f).testTag("alert-date-text-${alert.id}"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(dateText, style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                Text(
+                    dateText,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = if (alert.flexibleDateSearch) 13.sp else 15.sp),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = if (alert.flexibleDateSearch) 2 else 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    softWrap = true,
+                )
                 Text(listOfNotNull(tripDuration?.let { "$it días" }, passengerSummary).joinToString(" · "), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), maxLines = 1, softWrap = false)
             }
         }
@@ -1163,8 +1275,15 @@ private fun AlertRouteAndDates(
 private fun AlertOfferSummary(
     price: Long,
     current: Boolean,
+    explorationLimited: Boolean,
+    flexibleDateSearch: Boolean,
+    datePairsChecked: Int,
+    datePairCount: Int,
+    datePairsWithIncompleteOptions: Int,
     outboundDepartureTime: String?,
     returnDepartureTime: String?,
+    outboundDepartureDate: String?,
+    returnDepartureDate: String?,
     modifier: Modifier = Modifier,
     alertId: String,
 ) {
@@ -1183,18 +1302,34 @@ private fun AlertOfferSummary(
             Text(formatCop(price), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Text("COP", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
         }
+        if (current && explorationLimited) {
+            val coverage = if (flexibleDateSearch) {
+                buildString {
+                    append("Rango parcial · ${datePairsChecked.coerceAtLeast(0)} de ${datePairCount.coerceAtLeast(1)} fechas")
+                    if (datePairsWithIncompleteOptions > 0) append(" · opciones incompletas en $datePairsWithIncompleteOptions")
+                }
+            } else {
+                "Búsqueda parcial · puede haber opciones más baratas"
+            }
+            Text(
+                coverage,
+                color = FlightAppColors.onWarningContainer,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+            )
+        }
         if (!current) {
             Text("Horario de la última tarifa verificada", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            DepartureTimeTile("Ida", outboundDepartureTime, returning = false, Modifier.weight(1f).testTag("alert-outbound-time-$alertId"))
-            DepartureTimeTile("Regreso", returnDepartureTime, returning = true, Modifier.weight(1f).testTag("alert-return-time-$alertId"))
+            DepartureTimeTile("Ida", outboundDepartureTime, returning = false, Modifier.weight(1f).testTag("alert-outbound-time-$alertId"), date = outboundDepartureDate)
+            DepartureTimeTile("Regreso", returnDepartureTime, returning = true, Modifier.weight(1f).testTag("alert-return-time-$alertId"), date = returnDepartureDate)
         }
     }
 }
 
 @Composable
-private fun DepartureTimeTile(label: String, time: String?, returning: Boolean, modifier: Modifier = Modifier) {
+private fun DepartureTimeTile(label: String, time: String?, returning: Boolean, modifier: Modifier = Modifier, date: String? = null) {
     val color = if (returning) Color(0xFF6D42C6) else Color(0xFF1767C9)
     Surface(
         modifier = modifier,
@@ -1208,6 +1343,7 @@ private fun DepartureTimeTile(label: String, time: String?, returning: Boolean, 
         ) {
             Text(label, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp), maxLines = 1, softWrap = false)
             Text(time ?: "—", color = color, style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 23.sp), fontWeight = FontWeight.Bold, maxLines = 1)
+            date?.let { Text(it, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1) }
         }
     }
 }
@@ -1237,8 +1373,8 @@ private fun AlertCardPair(
 internal fun CompactAlertSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val trackColor by androidx.compose.animation.animateColorAsState(
         targetValue = if (checked) Color(0xFF008F91) else Color(0xFFD9E0E6),
@@ -1266,7 +1402,7 @@ internal fun CompactAlertSwitch(
             Box(
                 modifier = Modifier
                     .padding(start = 2.dp)
-                    .offset(x = thumbOffset)
+                    .offset { IntOffset(x = thumbOffset.roundToPx(), y = 0) }
                     .size(20.dp)
                     .shadow(1.dp, CircleShape)
                     .background(Color.White, CircleShape),
@@ -1358,20 +1494,54 @@ fun FlightAlertEditorScreen(
                             Text("Busca por ciudad, aeropuerto o código IATA", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1)
                         }
                         TripTypeSelector(fields.returning != null, onSelect = { roundTrip ->
-                            fields = fields.copy(returning = if (roundTrip) fields.returning ?: fields.outbound.plusDays(3) else null)
+                            val nextReturn = if (roundTrip) fields.returning ?: fields.outbound.plusDays(3) else null
+                            fields = fields.copy(returning = nextReturn, returnEnd = if (nextReturn == null) null else fields.returnEnd ?: nextReturn)
                         })
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DateEditorButton("Fecha de ida", fields.outbound, LocalDate.now(COLOMBIA_ZONE), Modifier.weight(1f).testTag("alert-date-outbound")) { selected ->
-                                val nextReturn = fields.returning?.let { if (it.isAfter(selected)) it else selected.plusDays(1) }
-                                fields = fields.copy(outbound = selected, returning = nextReturn)
-                                if (nextReturn != null) Handler(Looper.getMainLooper()).post {
-                                    openDatePicker(context, nextReturn, selected.plusDays(1)) { returning ->
-                                        fields = fields.copy(returning = returning)
+                        DateSearchModeSelector(fields.flexibleDates) { flexible ->
+                            fields = fields.copy(
+                                flexibleDates = flexible,
+                                outboundEnd = if (flexible) fields.outboundEnd.coerceAtLeast(fields.outbound) else fields.outbound,
+                                returnEnd = fields.returning?.let { if (flexible) (fields.returnEnd ?: it).coerceAtLeast(it) else it },
+                            )
+                        }
+                        val earliestOutbound = LocalDate.now(viewModel.airportCatalog.timeZoneFor(fields.origin) ?: COLOMBIA_ZONE)
+                        if (fields.flexibleDates) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                DateEditorButton("Ida desde", fields.outbound, earliestOutbound, Modifier.weight(1f).testTag("alert-date-outbound-start")) { selected ->
+                                    val end = fields.outboundEnd.coerceAtLeast(selected)
+                                    val nextReturn = fields.returning?.let { if (it.isAfter(selected)) it else selected.plusDays(1) }
+                                    fields = fields.copy(outbound = selected, outboundEnd = end, returning = nextReturn, returnEnd = nextReturn?.let { maxOf(fields.returnEnd ?: it, it) })
+                                }
+                                DateEditorButton("Ida hasta", fields.outboundEnd, fields.outbound, Modifier.weight(1f).testTag("alert-date-outbound-end")) { selected ->
+                                    fields = fields.copy(outboundEnd = selected)
+                                }
+                            }
+                            fields.returning?.let { returnStart ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    DateEditorButton("Regreso desde", returnStart, fields.outbound.plusDays(1), Modifier.weight(1f).testTag("alert-date-return-start")) { selected ->
+                                        fields = fields.copy(returning = selected, returnEnd = maxOf(fields.returnEnd ?: selected, selected))
+                                    }
+                                    DateEditorButton("Regreso hasta", fields.returnEnd ?: returnStart, returnStart, Modifier.weight(1f).testTag("alert-date-return-end")) { selected ->
+                                        fields = fields.copy(returnEnd = selected)
                                     }
                                 }
                             }
-                            fields.returning?.let { returning ->
-                                DateEditorButton("Fecha de regreso", returning, fields.outbound.plusDays(1), Modifier.weight(1f).testTag("alert-date-return")) { fields = fields.copy(returning = it) }
+                            val combinations = FlexibleFlightDates.allPairs(fields.outbound, fields.outboundEnd, fields.returning, fields.returnEnd).size
+                            Text("Se probará una combinación por revisión automática. Combinaciones válidas en el rango: $combinations (máximo 49).", modifier = Modifier.testTag("alert-date-combination-count"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                DateEditorButton(
+                                    "Fecha de ida", fields.outbound, earliestOutbound, Modifier.weight(1f).testTag("alert-date-outbound"),
+                                ) { selected ->
+                                    val nextReturn = fields.returning?.let { if (it.isAfter(selected)) it else selected.plusDays(1) }
+                                    fields = fields.copy(outbound = selected, outboundEnd = selected, returning = nextReturn, returnEnd = nextReturn)
+                                    if (nextReturn != null) Handler(Looper.getMainLooper()).post {
+                                        openDatePicker(context, nextReturn, selected.plusDays(1)) { returning ->
+                                            fields = fields.copy(returning = returning, returnEnd = returning)
+                                        }
+                                    }
+                                }
+                                fields.returning?.let { returning -> DateEditorButton("Fecha de regreso", returning, fields.outbound.plusDays(1), Modifier.weight(1f).testTag("alert-date-return")) { fields = fields.copy(returning = it, returnEnd = it) } }
                             }
                         }
                         PassengerSelectionEditor(fields.adults18Plus, fields.minors, { fields = fields.copy(adults18Plus = it) }, { fields = fields.copy(minors = it) })
@@ -1423,10 +1593,10 @@ fun FlightAlertEditorScreen(
                 Button(
                     onClick = {
                         val maximum = fields.maximum.toLongOrNull() ?: 0L
-                        val originName = viewModel.airportCatalog.find(fields.origin)?.city ?: fields.origin
-                        val destinationName = viewModel.airportCatalog.find(fields.destination)?.city ?: fields.destination
-                        val generatedName = "$originName a $destinationName"
-                        viewModel.save(AlertInput(alertId, generatedName, fields.origin, fields.destination, fields.outbound, fields.returning, maximum, fields.frequency, fields.direct, fields.startTime, fields.adults18Plus, fields.minors), onSaved)
+                        val originName = airportCityCountryName(fields.origin, viewModel.airportCatalog)
+                        val destinationName = airportCityCountryName(fields.destination, viewModel.airportCatalog)
+                        val generatedName = "$originName a $destinationName".take(80)
+                        viewModel.save(AlertInput(alertId, generatedName, fields.origin, fields.destination, fields.outbound, fields.returning, maximum, fields.frequency, fields.direct, fields.startTime, fields.adults18Plus, fields.minors, fields.flexibleDates, fields.outboundEnd, fields.returnEnd), onSaved)
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp).testTag("save-alert").primaryButtonTarget(),
                     shape = CircleShape,
@@ -1468,12 +1638,18 @@ fun FlightAlertDetailScreen(
             Text("No se encontró esta alerta.", modifier = Modifier.padding(20.dp), color = Color.White)
         } else {
             val current = result?.let { isCurrentVerification(alert, it) } == true
+            val detailHeader = when {
+                current && alert.flexibleDateSearch && result?.explorationLimited == true -> "Mejor tarifa observada hasta ahora"
+                current && alert.flexibleDateSearch -> "Mejor tarifa observada en el rango"
+                current -> "Tarifa más baja observada"
+                else -> "Último resultado"
+            }
             val offers = result?.verifiedOffersJson
                 ?.let { runCatching { Json.decodeFromString<List<VerifiedRoundTripOffer>>(it) }.getOrNull() }
                 ?.takeIf { it.isNotEmpty() }
                 ?: result?.selectedOfferJson?.let { raw -> runCatching { listOf(Json.decodeFromString<VerifiedRoundTripOffer>(raw)) }.getOrNull() }.orEmpty()
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("${formatAlertDates(alert.outboundDate, alert.returnDate)} · ${alertPassengerSummary(alert)} · Económica", color = Color.White.copy(alpha = 0.84f), fontWeight = FontWeight.Medium)
+                Text("${formatAlertDates(alert)} · ${alertPassengerSummary(alert)} · Económica", color = Color.White.copy(alpha = 0.84f), fontWeight = FontWeight.Medium)
                 Card(
                     shape = MaterialTheme.shapes.large,
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.7f)),
@@ -1481,7 +1657,7 @@ fun FlightAlertDetailScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
                 ) {
                     Column {
-                        SketchSectionHeader(if (current) "Tarifa más baja observada" else "Último resultado", AppIcon.Flight)
+                        SketchSectionHeader(detailHeader, AppIcon.Flight)
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(if (alert.returnDate.isBlank()) "Total solo ida" else "Total de ida y vuelta", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
                         if (result?.lastVerifiedTotalCop != null) {
@@ -1490,7 +1666,10 @@ fun FlightAlertDetailScreen(
                                 Surface(color = if (current) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.small) {
                                     Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                         if (current) AppIcon(AppIcon.Verified, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
-                                        Text(if (current) "Verificado" else "Dato anterior", color = if (current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary)
+                                        Text(
+                                            if (current && result?.explorationLimited == true) "Verificado · parcial" else if (current) "Verificado" else "Dato anterior",
+                                            color = if (current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary,
+                                        )
                                     }
                                 }
                             }
@@ -1525,6 +1704,7 @@ fun FlightAlertDetailScreen(
                         HorizontalDivider()
                         if (offers.isNotEmpty()) {
                             val best = offers.minByOrNull { it.totalCop }!!
+                            offerDatesSummary(best)?.let { Text("Fechas de esta tarifa: $it", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall) }
                             FlightLegSummary("Ida", best.outboundAirline, best.outbound)
                             HorizontalDivider()
                             if (best.returning.isNotEmpty()) FlightLegSummary("Regreso", best.returnAirline, best.returning)
@@ -1538,8 +1718,19 @@ fun FlightAlertDetailScreen(
                         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             AppIcon(AppIcon.Info, null, tint = FlightAppColors.onWarningContainer)
                             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text("Exploración parcial", fontWeight = FontWeight.SemiBold, color = FlightAppColors.tealDark)
-                                Text("No se comprobaron todas las combinaciones.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (alert.flexibleDateSearch) "Exploración del rango" else "Exploración parcial", fontWeight = FontWeight.SemiBold, color = FlightAppColors.tealDark)
+                                Text(
+                                    when {
+                                        alert.flexibleDateSearch && result.datePairsChecked < result.datePairCount && java.lang.Long.bitCount(result.datePairIncompleteMask) > 0 -> "Se consultaron ${result.datePairsChecked} de ${result.datePairCount} combinaciones; además, quedaron opciones de vuelo sin verificar en ${java.lang.Long.bitCount(result.datePairIncompleteMask)} combinación(es). La tarifa es la mejor observada hasta ahora."
+                                        alert.flexibleDateSearch && result.datePairsChecked < result.datePairCount -> "Combinaciones de fechas consultadas: ${result.datePairsChecked} de ${result.datePairCount}. La tarifa mostrada es la mejor observada hasta ahora; el ciclo seguirá en próximas revisiones."
+                                        alert.flexibleDateSearch -> "Se consultaron todas las fechas, pero quedaron opciones de vuelo sin verificar en ${java.lang.Long.bitCount(result.datePairIncompleteMask)} combinación(es). El total es el mejor observado; el mínimo todavía podría cambiar."
+                                        else -> "No se comprobaron todas las opciones de vuelo que devolvió la fuente; podría haber una tarifa menor."
+                                    },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                result.lastError?.let { error ->
+                                    Text("Incidencia en la última revisión: ${readableSearchError(error)} ($error).", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
                     }
@@ -1556,12 +1747,37 @@ fun FlightAlertDetailScreen(
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             offers.sortedBy { it.totalCop }.drop(1).forEachIndexed { index, offer ->
                                 if (index > 0) HorizontalDivider()
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        AirlineIdentity(offer.outboundAirline, Modifier.fillMaxWidth(), compact = true)
-                                        if (offer.returning.isNotEmpty()) AirlineIdentity(offer.returnAirline, Modifier.fillMaxWidth(), compact = true)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    AirlineIdentity(
+                                        verifiedOfferAirlines(offer),
+                                        Modifier.widthIn(max = 148.dp),
+                                        compact = true,
+                                        wrapText = true,
+                                    )
+                                    offerDepartureTimes(offer)?.let { times ->
+                                        Text(
+                                            times,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.semantics {
+                                                contentDescription = "Horas de salida: $times"
+                                            },
+                                        )
                                     }
-                                    Text(formatCop(offer.totalCop), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        formatCop(offer.totalCop),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                    )
                                 }
                             }
                             Text(if (alert.returnDate.isBlank()) "Precios de ida observados" else "Totales de ida y vuelta", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
@@ -1593,11 +1809,14 @@ fun FlightAlertDetailScreen(
                         Text("Abrir Google Flights")
                     }
                 }
-                OutlinedButton(onClick = { viewModel.requestReview(alert.id) }, enabled = state.runningAlertId == null, modifier = Modifier.fillMaxWidth().primaryButtonTarget(), shape = CircleShape, colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = FlightAppColors.tealDark)) {
-                    AppIcon(AppIcon.Refresh, null)
-                    Text(if (state.runningAlertId == alert.id) "Consultando…" else "Revisar ahora")
-                }
-                Text(if (alert.returnDate.isBlank()) "Consume 1 consulta de vuelos." else "Consume hasta 4 consultas de vuelos.", modifier = Modifier.align(Alignment.CenterHorizontally), color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.bodySmall)
+                ReviewFlightButton(
+                    modifier = Modifier.fillMaxWidth().primaryButtonTarget(),
+                    onClick = { viewModel.requestReview(alert.id) },
+                    isRunning = state.runningAlertId == alert.id,
+                    idleLabel = "Revisar ahora",
+                    canStart = state.runningAlertId == null,
+                )
+                Text(if (alert.returnDate.isBlank()) "Consume 1 consulta de vuelos." else "Consume hasta 9 consultas de vuelos.", modifier = Modifier.align(Alignment.CenterHorizontally), color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -1613,6 +1832,42 @@ private fun formatAlertDates(outbound: String, returning: String): String {
     } else {
         "${DateTimeFormatter.ofPattern("d MMM yyyy", locale).format(start)}–${DateTimeFormatter.ofPattern("d MMM yyyy", locale).format(end)}"
     }
+}
+
+private fun formatAlertDates(alert: FlightAlertEntity, compact: Boolean = false): String {
+    if (!alert.flexibleDateSearch) return formatAlertDates(alert.outboundDate, alert.returnDate)
+    val outboundEnd = alert.outboundDateEnd.ifBlank { alert.outboundDate }
+    val windowFormatter: (String, String) -> String = if (compact) ::compactDateWindow else ::shortDateWindow
+    val outbound = windowFormatter(alert.outboundDate, outboundEnd)
+    if (alert.returnDate.isBlank()) return "Solo ida · Ida $outbound"
+    val returnEnd = alert.returnDateEnd.ifBlank { alert.returnDate }
+    return "Ida $outbound · Regreso ${windowFormatter(alert.returnDate, returnEnd)}"
+}
+
+private fun compactDateWindow(startValue: String, endValue: String): String {
+    val start = LocalDate.parse(startValue)
+    val end = LocalDate.parse(endValue)
+    val month = DateTimeFormatter.ofPattern("MMM", Locale.forLanguageTag("es-CO"))
+    return when {
+        start == end -> "${start.dayOfMonth} ${month.format(start)}"
+        start.month == end.month && start.year == end.year -> "${start.dayOfMonth}–${end.dayOfMonth} ${month.format(end)}"
+        else -> "${DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO")).format(start)}–${DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO")).format(end)}"
+    }
+}
+
+private fun shortDateWindow(startValue: String, endValue: String): String {
+    val start = LocalDate.parse(startValue)
+    val end = LocalDate.parse(endValue)
+    val monthPattern = DateTimeFormatter.ofPattern("MMM", Locale.forLanguageTag("es-CO"))
+    val yearPattern = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO"))
+    if (start == end) return yearPattern.format(start)
+    return if (start.month == end.month && start.year == end.year) {
+        "${start.dayOfMonth}–${end.dayOfMonth} ${monthPattern.format(end)} ${end.year}"
+    } else "${yearPattern.format(start)}–${yearPattern.format(end)}"
+}
+
+private fun offerDepartureDate(value: String?): String? = value?.take(10)?.let { raw ->
+    runCatching { DateTimeFormatter.ofPattern("d MMM", Locale.forLanguageTag("es-CO")).format(LocalDate.parse(raw)) }.getOrNull()
 }
 
 private fun alertPassengerSummary(alert: FlightAlertEntity): String {
@@ -1645,6 +1900,34 @@ private fun departureTimesSummary(segments: List<com.flightnotifications.app.dom
     return departures.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
+private fun verifiedOfferAirlines(offer: VerifiedRoundTripOffer): String = when {
+    offer.returning.isEmpty() -> offer.outboundAirline
+    offer.outboundAirline.equals(offer.returnAirline, ignoreCase = true) -> offer.outboundAirline
+    else -> "${offer.outboundAirline} / ${offer.returnAirline}"
+}
+
+private fun offerDepartureTimes(offer: VerifiedRoundTripOffer): String? {
+    fun firstDeparture(segments: List<com.flightnotifications.app.domain.model.AlertFlightSegment>): String? =
+        segments.firstOrNull()?.departureLocal?.let(FlightDepartureTime::format)
+
+    val outbound = firstDeparture(offer.outbound)
+    val returning = firstDeparture(offer.returning)
+    return when {
+        outbound != null && returning != null -> "$outbound / $returning"
+        outbound != null -> outbound
+        returning != null -> returning
+        else -> null
+    }
+}
+
+private fun offerDatesSummary(offer: VerifiedRoundTripOffer): String? {
+    fun date(segments: List<com.flightnotifications.app.domain.model.AlertFlightSegment>): String? = segments.firstOrNull()?.departureLocal
+        ?.take(10)?.let { runCatching { DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("es-CO")).format(LocalDate.parse(it)) }.getOrNull() }
+    val outbound = date(offer.outbound) ?: return null
+    val returning = date(offer.returning)
+    return if (returning == null) "ida $outbound" else "ida $outbound · regreso $returning"
+}
+
 @Composable
 private fun AirportRouteLine(direction: String, airport: String) {
     Row(
@@ -1660,7 +1943,7 @@ private fun AirportRouteLine(direction: String, airport: String) {
 @Composable
 private fun AlertSummaryCard(
     item: AlertWithResult,
-    airportCatalog: ColombianAirportCatalog,
+    airportCatalog: AirportCatalog,
     expanded: Boolean,
     isRunning: Boolean,
     expired: Boolean,
@@ -1679,7 +1962,7 @@ private fun AlertSummaryCard(
                 Text(alert.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 AirportRouteLine("Ida", airportFullName(alert.originIata, airportCatalog))
                 if (alert.returnDate.isNotBlank()) AirportRouteLine("Regreso", airportFullName(alert.destinationIata, airportCatalog))
-                Text(formatAlertDates(alert.outboundDate, alert.returnDate), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                Text(formatAlertDates(alert), color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
             }
             Switch(checked = alert.enabled && !expired, onCheckedChange = onToggle, enabled = !isRunning && !expired, modifier = Modifier.testTag("toggle-alert-${alert.id}").sizeIn(minWidth = 48.dp, minHeight = 48.dp))
         }
@@ -1720,22 +2003,60 @@ private fun AlertResultDetails(alert: FlightAlertEntity, result: com.flightnotif
         Text("Detalle de la última consulta", fontWeight = FontWeight.SemiBold)
         Text("Criterios de esa consulta: ${result.attemptCriteria?.let(::formatCriteriaKey) ?: "no disponibles"}.")
         Text("Máximo aplicado entonces: ${formatCop(result.attemptMaximumCop ?: alert.maxTotalCop)} · máximo actual: ${formatCop(alert.maxTotalCop)}.")
-        Text("Estado: ${result.status}${result.lastError?.let { " · motivo: $it" }.orEmpty()}")
+        val stateDescription = when {
+            currentVerification && result.explorationLimited -> "Tarifa verificada; búsqueda parcial"
+            currentVerification -> "Tarifa verificada"
+            result.lastVerifiedTotalCop != null -> "Hay una tarifa anterior; no está confirmada con los criterios actuales"
+            else -> result.status.replace('_', ' ')
+        }
+        Text("Estado: $stateDescription")
+        result.accountAlias?.takeIf { it.isNotBlank() }?.let { Text("Cuenta SerpApi usada: $it.") }
+        Text(
+            "Salidas consideradas: ${result.candidatesConsidered} · respuestas completadas: ${result.candidatesCompleted} · fallidas: ${result.candidateFailures} · GET de vuelos: ${result.flightGetsStarted}.",
+        )
+        result.lastError?.let { error ->
+            Text("Incidencia de la última revisión: ${readableSearchError(error)} ($error).")
+        }
         result.networkReceivedAt?.let { Text("Respuesta recibida: ${formatLocal(it)}") }
+        if (alert.flexibleDateSearch) {
+            val pairCount = result.datePairCount.coerceAtLeast(1)
+            val checked = result.datePairsChecked.coerceIn(0, pairCount)
+            Text("Combinaciones de fechas consultadas: $checked de $pairCount.")
+        }
         Text(
             if (result.explorationLimited) {
-                "Se revisaron ${result.candidatesConsidered} opciones de salida; la exploración fue parcial."
+                val incompletePairs = java.lang.Long.bitCount(result.datePairIncompleteMask)
+                if (alert.flexibleDateSearch && result.datePairsChecked < result.datePairCount && incompletePairs > 0) {
+                    "Mejor tarifa observada hasta ahora. Faltan fechas por consultar y quedaron opciones de vuelo sin verificar en $incompletePairs combinación(es)."
+                } else if (alert.flexibleDateSearch && result.datePairsChecked < result.datePairCount) {
+                    "Mejor tarifa observada hasta ahora; faltan combinaciones de fechas por consultar."
+                } else if (alert.flexibleDateSearch && incompletePairs > 0) {
+                    "Se consultaron todas las fechas, pero quedaron opciones de vuelo sin verificar en $incompletePairs combinación(es). Se revisan hasta ${result.candidateLimit} salidas por consulta; el total mostrado es la mejor tarifa observada, no un mínimo confirmado."
+                } else {
+                    "Se revisaron ${result.candidatesConsidered} opciones de salida; la fuente no permitió verificar todas."
+                }
             } else {
                 "Se revisaron ${result.candidatesConsidered} opciones de salida; la fuente no informó más candidatas."
             },
         )
         if (result.lastVerifiedTotalCop != null) {
-            Text("${if (currentVerification) "Total verificado en esta consulta" else "Último total verificado previo; no confirmado con los criterios actuales"}: ${formatCop(result.lastVerifiedTotalCop)}")
+            val totalLabel = when {
+                !currentVerification -> "Último total verificado; no confirmado con los criterios actuales"
+                alert.flexibleDateSearch && result.explorationLimited -> "Mejor total verificado hasta ahora"
+                alert.flexibleDateSearch -> "Mejor total verificado en el rango"
+                else -> "Total verificado en esta consulta"
+            }
+            Text("$totalLabel: ${formatCop(result.lastVerifiedTotalCop)}")
             if (!currentVerification) {
                 Text("Criterios del último total verificado: ${result.verifiedCriteria?.let(::formatCriteriaKey) ?: "no disponibles"} · ${result.lastVerifiedAt?.let(::formatLocal) ?: "fecha no disponible"}.")
             }
             if (verifiedOffers.isNotEmpty()) {
-                Text(if (currentVerification) "Opciones verificadas en esta consulta (${verifiedOffers.size})" else "Opciones de la última consulta verificada (${verifiedOffers.size})", fontWeight = FontWeight.Medium)
+                val offersLabel = when {
+                    !currentVerification -> "Opciones de la última consulta verificada"
+                    alert.flexibleDateSearch -> "Opciones verificadas acumuladas en el rango"
+                    else -> "Opciones verificadas en esta consulta"
+                }
+                Text("$offersLabel (${verifiedOffers.size})", fontWeight = FontWeight.Medium)
                 verifiedOffers.forEachIndexed { index, offer ->
                     OfferSummary(offer, if (currentVerification) "Opción ${index + 1}" else "Dato previo · opción ${index + 1}")
                 }
@@ -1787,7 +2108,7 @@ private fun AlertResultDetails(alert: FlightAlertEntity, result: com.flightnotif
                                 Text(
                                     buildString {
                                         append("No se verificó una tarifa completa de: ${notVerified.joinToString(", ")}.")
-                                        if (result.explorationLimited) append(" La búsqueda fue parcial y pudo dejar combinaciones sin revisar.")
+                                        if (result.explorationLimited) append(" La búsqueda fue parcial y puede haber fechas o opciones de vuelo sin verificar.")
                                     },
                                     color = FlightAppColors.onWarningContainer,
                                     style = MaterialTheme.typography.bodySmall,
@@ -1816,6 +2137,7 @@ private fun OfferSummary(offer: VerifiedRoundTripOffer, label: String) {
     val backStops = (offer.returning.size - 1).coerceAtLeast(0)
     Column(Modifier.fillMaxWidth().padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, fontWeight = FontWeight.Medium)
+        offerDatesSummary(offer)?.let { Text("Fechas: $it", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             Text("Ida · ${offer.outbound.firstOrNull()?.fromIata ?: "?"} → ${offer.outbound.lastOrNull()?.toIata ?: "?"}", modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             AirlineIdentity(offer.outboundAirline, Modifier.weight(1f), compact = true)
@@ -1885,6 +2207,27 @@ private fun TripTypeSelector(roundTrip: Boolean, onSelect: (Boolean) -> Unit, mo
 }
 
 @Composable
+private fun DateSearchModeSelector(flexible: Boolean, onSelect: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Fechas del viaje", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = !flexible,
+                onClick = { onSelect(false) },
+                label = { Text("Días específicos") },
+                modifier = Modifier.weight(1f).testTag("date-mode-exact"),
+            )
+            FilterChip(
+                selected = flexible,
+                onClick = { onSelect(true) },
+                label = { Text("Rango flexible") },
+                modifier = Modifier.weight(1f).testTag("date-mode-flexible"),
+            )
+        }
+    }
+}
+
+@Composable
 private fun PassengerSelectionEditor(
     adults18Plus: Int,
     minors: List<MinorPassenger>,
@@ -1925,7 +2268,15 @@ private fun PassengerSelectionEditor(
                 }
             }
         }
-        OutlinedButton(onClick = { showAgeDialog = true }, enabled = adults18Plus + minors.size < PassengerSelection.MAX_PASSENGERS, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("add-minor")) {
+        Button(
+            onClick = { showAgeDialog = true },
+            enabled = adults18Plus + minors.size < PassengerSelection.MAX_PASSENGERS,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("add-minor"),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = FlightAppColors.teal,
+                contentColor = Color.White,
+            ),
+        ) {
             Text("+ Agregar menor de 18 años", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         }
     }
@@ -2083,13 +2434,27 @@ private fun formatCop(amount: Long): String = NumberFormat.getCurrencyInstance(L
     minimumFractionDigits = 0
 }.format(amount)
 
+private fun readableSearchError(code: String): String = when (code) {
+    "SERVICE_ERROR" -> "falló el servicio de búsqueda"
+    "SERVICE_UNAVAILABLE" -> "el servicio de búsqueda no está disponible"
+    "RATE_LIMITED" -> "se alcanzó un límite temporal"
+    "NETWORK" -> "hubo un problema de conexión"
+    else -> code.replace('_', ' ').lowercase(Locale.ROOT)
+}
+
 private fun isCurrentVerification(alert: FlightAlertEntity, result: com.flightnotifications.app.data.local.FlightAlertResultEntity): Boolean =
     result.status == "VERIFICADO" && result.verifiedCriteria != null &&
         result.verifiedCriteria == result.attemptCriteria && result.verifiedCriteria == criteriaKey(alert) &&
         result.attemptMaximumCop == alert.maxTotalCop
 
 private fun criteriaKey(alert: FlightAlertEntity): String =
-    "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}|${alert.returnDate.ifBlank { "one-way" }}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}"
+    if (!alert.flexibleDateSearch) {
+        "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}|${alert.returnDate.ifBlank { "one-way" }}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}"
+    } else {
+        val outboundEnd = alert.outboundDateEnd.ifBlank { alert.outboundDate }
+        val returnEnd = alert.returnDateEnd.ifBlank { alert.returnDate }
+        "${alert.originIata}-${alert.destinationIata}|${alert.outboundDate}..$outboundEnd|${if (alert.returnDate.isBlank()) "one-way" else "${alert.returnDate}..$returnEnd"}|direct=${alert.directOnly}|adults=${alert.adults18Plus}|minors=${alert.minorPassengersJson}|flexible=true"
+    }
 
 private fun formatCriteriaKey(value: String): String {
     val parts = value.split('|')
@@ -2099,8 +2464,14 @@ private fun formatCriteriaKey(value: String): String {
     val direct = parts.getOrNull(3)?.substringAfter('=')?.toBooleanStrictOrNull()
     val adults = parts.getOrNull(4)?.substringAfter('=')?.toIntOrNull() ?: 1
     val minors = parts.getOrNull(5)?.substringAfter('=')?.let { raw -> runCatching { Json.decodeFromString<List<MinorPassenger>>(raw) }.getOrDefault(emptyList()) }.orEmpty()
-    val trip = if (returning == "one-way") "solo ida" else "regreso $returning"
-    return "$route · ida $outbound · $trip · ${PassengerSelection.summary(adults, minors)} · ${if (direct == true) "directos" else if (direct == false) "escalas permitidas" else "filtros no disponibles"}"
+    val flexible = parts.getOrNull(6) == "flexible=true"
+    val trip = when {
+        returning == "one-way" -> "solo ida"
+        flexible -> "regreso en rango $returning"
+        else -> "regreso $returning"
+    }
+    val outboundLabel = if (flexible) "rango de ida $outbound" else "ida $outbound"
+    return "$route · $outboundLabel · $trip · ${PassengerSelection.summary(adults, minors)} · ${if (direct == true) "directos" else if (direct == false) "escalas permitidas" else "filtros no disponibles"}"
 }
 
 private fun formatLocal(epochMillis: Long): String = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'COT'")

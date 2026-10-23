@@ -8,6 +8,7 @@ import com.flightnotifications.app.data.local.ProbePreferencesRepository
 import com.flightnotifications.app.data.repository.FailureCode
 import com.flightnotifications.app.data.repository.ProbeFailure
 import com.flightnotifications.app.data.repository.SerpApiRepository
+import com.flightnotifications.app.data.repository.SavedAccountCheck
 import com.flightnotifications.app.domain.model.LocalBudgetSnapshot
 import com.flightnotifications.app.security.CredentialStore
 import kotlinx.coroutines.CancellationException
@@ -52,15 +53,22 @@ class ProbeViewModel(
             }
         }
         viewModelScope.launch {
+            flightDiagnosticLog.storageError.collect { error ->
+                mutableState.value = mutableState.value.copy(flightDiagnosticStorageError = error)
+            }
+        }
+        viewModelScope.launch {
             budgetSnapshots.filterNotNull().collect { budget ->
                 mutableState.value = mutableState.value.copy(budget = budget)
             }
         }
         viewModelScope.launch {
-            credentialStore.isConfigured().also { configured ->
-                mutableState.value = mutableState.value.copy(credentialConfigured = configured)
-                if (configured) checkAccount()
+            val configured = runCatching { credentialStore.credentials() }.getOrElse {
+                mutableState.value = mutableState.value.copy(errorMessage = "No se pudieron leer las claves cifradas.")
+                emptyList()
             }
+            mutableState.value = mutableState.value.copy(credentialConfigured = configured.isNotEmpty())
+            if (configured.isNotEmpty()) checkAccount()
             repository.localBudget().also { budget -> mutableState.value = mutableState.value.copy(budget = budget) }
         }
         viewModelScope.launch {
@@ -81,41 +89,64 @@ class ProbeViewModel(
     fun saveCredential(apiKey: String) {
         if (apiKey.isBlank() || state.value.isRunningProbe || state.value.isCheckingAccount) return
         viewModelScope.launch {
-            executionMutex.withLock {
-                runCatching { credentialStore.save(apiKey.trim()) }
+            mutableState.value = mutableState.value.copy(
+                isCheckingAccount = true,
+                errorMessage = null,
+                credentialSaveCompleted = false,
+                credentialSaveError = null,
+                accountMessage = null,
+            )
+            try {
+                val normalized = apiKey.trim()
+                val duplicate = runCatching { credentialStore.credentials().any { it.apiKey == normalized } }.getOrDefault(false)
+                if (duplicate) {
+                    mutableState.value = mutableState.value.copy(credentialSaveError = "Esta API key ya está agregada.")
+                    return@launch
+                }
+                val account = repository.checkAccount(normalized)
+                credentialStore.add(normalized)
+                check(credentialStore.credentials().any { it.apiKey == normalized }) { "CREDENTIAL_SAVE_NOT_CONFIRMED" }
+                recordAccountDiagnostic("credential_added account_status=${account.accountStatus}")
+                mutableState.value = mutableState.value.copy(
+                    credentialConfigured = true,
+                    credentialSaveCompleted = true,
+                    accountMessage = "API key validada y guardada de forma cifrada.",
+                    outcome = null,
+                    errorMessage = null,
+                )
+                runCatching { refreshSavedAccounts() }
                     .onSuccess {
-                        recordAccountDiagnostic("credential_saved_or_replaced")
-                        mutableState.value = mutableState.value.copy(
-                            credentialConfigured = true,
-                            account = null,
-                            accountMessage = "Clave guardada de forma cifrada en este dispositivo.",
-                            outcome = null,
-                            errorMessage = null,
-                        )
-                        checkAccount()
+                        mutableState.value = mutableState.value.copy(accountMessage = "API key validada y guardada de forma cifrada.")
                     }
                     .onFailure {
-                        recordAccountDiagnostic("credential_save_failed")
-                        mutableState.value = mutableState.value.copy(errorMessage = "No fue posible guardar la clave de forma segura.")
+                        mutableState.value = mutableState.value.copy(accountMessage = "API key guardada. No se pudo actualizar el saldo; toca Actualizar.")
                     }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: ProbeFailure) {
+                recordAccountDiagnostic("credential_validation_failed category=${failure.code.name}")
+                val message = messageFor(failure.code)
+                mutableState.value = mutableState.value.copy(errorMessage = message, credentialSaveError = message)
+            } catch (_: Exception) {
+                recordAccountDiagnostic("credential_add_failed")
+                val message = "No fue posible validar o guardar la API key. Revisa la conexión y vuelve a intentarlo."
+                mutableState.value = mutableState.value.copy(errorMessage = message, credentialSaveError = message)
+            } finally {
+                mutableState.value = mutableState.value.copy(isCheckingAccount = false)
             }
         }
     }
 
-    fun deleteCredential() {
+    fun deleteCredential(id: String) {
         if (state.value.isRunningProbe || state.value.isCheckingAccount) return
         viewModelScope.launch {
             mutableState.value = mutableState.value.copy(isDeletingCredential = true, errorMessage = null)
             executionMutex.withLock {
-                runCatching { credentialStore.delete() }
+                runCatching { credentialStore.remove(id) }
                     .onSuccess {
-                        recordAccountDiagnostic("credential_deleted")
-                        mutableState.value = mutableState.value.copy(
-                            credentialConfigured = false,
-                            account = null,
-                            accountMessage = null,
-                            outcome = null,
-                        )
+                        recordAccountDiagnostic("credential_removed")
+                        val remaining = runCatching { credentialStore.credentials() }.getOrDefault(emptyList())
+                        mutableState.value = mutableState.value.copy(credentialConfigured = remaining.isNotEmpty(), outcome = null)
                     }
                     .onFailure {
                         recordAccountDiagnostic("credential_delete_failed")
@@ -123,6 +154,8 @@ class ProbeViewModel(
                     }
             }
             mutableState.value = mutableState.value.copy(isDeletingCredential = false)
+            if (state.value.credentialConfigured) checkAccount()
+            else mutableState.value = mutableState.value.copy(credentialAccounts = emptyList(), account = null, accountMessage = null)
         }
     }
 
@@ -168,28 +201,54 @@ class ProbeViewModel(
             recordAccountDiagnostic("ui_action account_check")
             mutableState.value = mutableState.value.copy(isCheckingAccount = true, accountMessage = null, errorMessage = null)
             try {
-                val account = repository.checkAccount()
-                mutableState.value = mutableState.value.copy(
-                    account = account,
-                    accountMessage = if (account.accountStatus.equals("Active", ignoreCase = true)) {
-                        "Cuenta comprobada. Account API no consume búsquedas de vuelos."
-                    } else {
-                        "La cuenta no está activa; se bloquearán las búsquedas de vuelos."
-                    },
-                )
-                recordAccountDiagnostic("account_check_completed status=${account.accountStatus}")
+                refreshSavedAccounts()
+                recordAccountDiagnostic("account_check_completed accounts=${state.value.credentialAccounts.size}")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: ProbeFailure) {
                 recordAccountDiagnostic("account_check_failed category=${failure.code.name}")
-                mutableState.value = mutableState.value.copy(account = null, errorMessage = messageFor(failure.code))
+                mutableState.value = mutableState.value.copy(account = null, credentialAccounts = emptyList(), errorMessage = messageFor(failure.code))
             } catch (_: Exception) {
                 recordAccountDiagnostic("account_check_failed category=UNEXPECTED")
-                mutableState.value = mutableState.value.copy(account = null, errorMessage = "No se pudo comprobar la cuenta.")
+                mutableState.value = mutableState.value.copy(account = null, credentialAccounts = emptyList(), errorMessage = "No se pudo comprobar la cuenta.")
             } finally {
                 mutableState.value = mutableState.value.copy(isCheckingAccount = false)
             }
         }
+    }
+
+    private suspend fun refreshSavedAccounts() {
+        val checks = repository.checkSavedAccounts()
+        val accountRows = checks.map(::toCredentialUi)
+        val selected = checks.firstOrNull { check ->
+            check.account?.accountStatus.equals("Active", ignoreCase = true) && (check.account?.conservativeSearchesLeft ?: 0) > 0
+        }?.account ?: checks.firstNotNullOfOrNull { it.account }
+        val availableAccounts = accountRows.count { it.active }
+        val summary = when {
+            checks.isEmpty() -> null
+            availableAccounts > 0 -> "$availableAccounts cuenta(s) disponibles. Se probarán en el orden configurado, saltando las que no tengan consultas."
+            checks.any { it.account?.accountStatus.equals("Active", ignoreCase = true) } -> "Las cuentas están activas, pero no tienen saldo dentro del límite disponible."
+            else -> "No hay una cuenta activa disponible; revisa las claves guardadas."
+        }
+        mutableState.value = mutableState.value.copy(
+            credentialConfigured = checks.isNotEmpty(),
+            credentialAccounts = accountRows,
+            account = selected,
+            accountMessage = summary ?: mutableState.value.accountMessage,
+        )
+    }
+
+    private fun toCredentialUi(check: SavedAccountCheck): CredentialAccountUi {
+        val account = check.account
+        val left = account?.conservativeSearchesLeft
+        val active = account?.accountStatus.equals("Active", ignoreCase = true) && (left ?: 0) > 0
+        val status = when {
+            check.failure != null -> messageFor(check.failure)
+            account?.accountStatus.equals("Active", ignoreCase = true) && (left ?: 0) <= 0 -> "Activa · sin consultas disponibles"
+            account?.accountStatus.equals("Active", ignoreCase = true) -> "Activa · $left consultas conservadoras disponibles"
+            else -> "Cuenta ${account?.accountStatus ?: "sin estado"}"
+        }
+        return CredentialAccountUi(check.credentialId, check.maskedKey, status, active, left)
     }
 
     fun requestFlightProbeConfirmation() {

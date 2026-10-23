@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as FlightProbeApplication).container.alertWorkScheduler.enqueueCatchUp()
         flightAlertsViewModel.setNotificationOpenAlert(intent.getStringExtra(EXTRA_ALERT_ID))
         setContent {
             FlightProbeTheme {

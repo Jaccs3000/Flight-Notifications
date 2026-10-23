@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.math.BigDecimal
 import java.time.LocalDateTime
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 
@@ -67,6 +69,7 @@ class SerpApiJsonParser {
                 arrival = airport(arrival),
                 airline = flight.stringAt("airline"),
                 flightNumber = flight.stringAt("flight_number"),
+                durationMinutes = flight.intAt("duration")?.takeIf { it > 0 },
             )
         }
         if (segments.isEmpty()) error("malformed")
@@ -84,8 +87,16 @@ class SerpApiJsonParser {
         return AirportPoint(
             code = code,
             name = json.stringAt("name"),
-            localDateTime = json.stringAt("time")?.let(::parseLocalDateTime),
+            localDateTime = parseAirportLocalDateTime(json),
         )
+    }
+
+    private fun parseAirportLocalDateTime(json: JsonObject): LocalDateTime? {
+        val time = json.stringAt("time") ?: return null
+        parseLocalDateTime(time)?.let { return it }
+        val date = json.stringAt("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+        val localTime = runCatching { LocalTime.parse(time, DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull() ?: return null
+        return date.atTime(localTime)
     }
 
     private fun parseLocalDateTime(value: String): LocalDateTime? = try {
@@ -124,6 +135,9 @@ class SerpApiJsonParser {
     private fun JsonObject.stringAt(key: String): String? = (this[key] as? JsonPrimitive)
         ?.takeIf { it.isString }
         ?.content
+    private fun JsonObject.intAt(key: String): Int? = this[key]?.let { element ->
+        (element as? JsonPrimitive)?.content?.toIntOrNull()
+    }
     private fun JsonElement?.asIntegralLongOrNull(): Long? {
         return try {
             val primitive = this as? JsonPrimitive ?: return null

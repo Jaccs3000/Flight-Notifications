@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         LowestNotifiedPriceEntity::class,
         InstallationMetadataEntity::class,
     ],
-    version = 7,
+    version = 11,
     exportSchema = true,
 )
 abstract class ProbeDatabase : RoomDatabase() {
@@ -76,6 +76,40 @@ abstract class ProbeDatabase : RoomDatabase() {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `adults18Plus` INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `minorPassengersJson` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `flexibleDateSearch` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `outboundDateEnd` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `returnDateEnd` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `flight_alerts` ADD COLUMN `datePairRotation` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `datePairsChecked` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `datePairCount` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `datePairProgressMask` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `datePairIncompleteMask` INTEGER NOT NULL DEFAULT 0")
+                // A prior release tracked date pairs but did not persist which ones were only partly checked.
+                // Treat already visited pairs conservatively until the next complete sweep resets the cycle.
+                db.execSQL("UPDATE `flight_alert_results` SET `datePairIncompleteMask` = `datePairProgressMask` WHERE `datePairProgressMask` != 0")
+            }
+        }
+
+        val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `candidatesCompleted` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `candidateFailures` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `flight_alert_results` ADD COLUMN `accountAlias` TEXT")
             }
         }
     }

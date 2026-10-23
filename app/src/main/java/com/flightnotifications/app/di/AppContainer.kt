@@ -14,7 +14,7 @@ import com.flightnotifications.app.security.CredentialStore
 import com.flightnotifications.app.security.KeystoreCredentialStore
 import com.flightnotifications.app.data.notification.FlightNotificationDispatcher
 import com.flightnotifications.app.data.worker.AlertWorkScheduler
-import com.flightnotifications.app.domain.validation.ColombianAirportCatalog
+import com.flightnotifications.app.domain.validation.AirportCatalog
 import com.flightnotifications.app.domain.validation.ColombianAirlineCatalog
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.flow.first
@@ -33,6 +33,10 @@ class AppContainer(context: Context) {
         ProbeDatabase.MIGRATION_4_5,
         ProbeDatabase.MIGRATION_5_6,
         ProbeDatabase.MIGRATION_6_7,
+        ProbeDatabase.MIGRATION_7_8,
+        ProbeDatabase.MIGRATION_8_9,
+        ProbeDatabase.MIGRATION_9_10,
+        ProbeDatabase.MIGRATION_10_11,
     ).build()
     val flightAlertDao: FlightAlertDao = database.flightAlertDao()
 
@@ -44,10 +48,14 @@ class AppContainer(context: Context) {
     val credentialStore: CredentialStore = KeystoreCredentialStore(applicationContext.noBackupFilesDir)
     val preferencesRepository = ProbePreferencesRepository(applicationContext)
     val flightAlertRepository = com.flightnotifications.app.data.repository.FlightAlertRepository(flightAlertDao)
-    val airportCatalog = ColombianAirportCatalog(applicationContext)
+    val airportCatalog = AirportCatalog(applicationContext)
     val airlineCatalog = ColombianAirlineCatalog(applicationContext)
-    val notificationDispatcher = FlightNotificationDispatcher(applicationContext, flightAlertRepository)
-    val alertWorkScheduler = AlertWorkScheduler(applicationContext)
+    val notificationDispatcher = FlightNotificationDispatcher(
+        applicationContext,
+        flightAlertRepository,
+        airportTimeZoneFor = airportCatalog::timeZoneFor,
+    )
+    val alertWorkScheduler = AlertWorkScheduler(applicationContext, diagnosticLog = flightDiagnosticLog)
     private val serpApiClient = RetrofitSerpApiClient()
     val localBudgetRepository = LocalBudgetRepository(database.requestReservationDao(), maximumRequests = {
         preferencesRepository.preferences.first().localBudgetLimit
@@ -61,6 +69,6 @@ class AppContainer(context: Context) {
         executionMutex = executionMutex,
         accountDiagnosticLog = accountDiagnosticLog,
         flightDiagnosticLog = flightDiagnosticLog,
-        domesticAirportCodes = airportCatalog.airports.map { it.iata }.toSet(),
+        airportTimeZoneFor = airportCatalog::timeZoneFor,
     )
 }

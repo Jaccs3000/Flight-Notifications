@@ -55,6 +55,9 @@ abstract class FlightAlertDao {
     @Query("UPDATE flight_alerts SET candidateRotation = candidateRotation + 1 WHERE id = :id AND criteriaVersion = :criteriaVersion")
     abstract suspend fun advanceCandidateRotation(id: String, criteriaVersion: Long): Int
 
+    @Query("UPDATE flight_alerts SET datePairRotation = ((:datePairIndex + 1) % :datePairCount) WHERE id = :id AND criteriaVersion = :criteriaVersion AND (datePairRotation % :datePairCount) = :datePairIndex")
+    abstract suspend fun advanceDatePairRotation(id: String, criteriaVersion: Long, datePairIndex: Int, datePairCount: Int): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun putResult(result: FlightAlertResultEntity)
 

@@ -1,12 +1,9 @@
 package com.flightnotifications.app.data.worker
 
-/** Avoids spending provider quota on scheduled reviews that cannot deliver notifications. */
+/** Scheduled searches still refresh prices even when Android notification delivery is unavailable. */
 object AutomaticReviewPolicy {
-    enum class Decision { NO_DUE_ALERTS, NOTIFICATIONS_BLOCKED, RUN }
+    enum class Decision { NO_DUE_ALERTS, RUN }
 
-    fun decide(dueAlertCount: Int, notificationsAllowed: Boolean): Decision = when {
-        dueAlertCount <= 0 -> Decision.NO_DUE_ALERTS
-        !notificationsAllowed -> Decision.NOTIFICATIONS_BLOCKED
-        else -> Decision.RUN
-    }
+    fun decide(dueAlertCount: Int): Decision =
+        if (dueAlertCount <= 0) Decision.NO_DUE_ALERTS else Decision.RUN
 }

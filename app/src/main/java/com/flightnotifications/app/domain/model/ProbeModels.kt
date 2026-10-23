@@ -66,6 +66,7 @@ data class FlightSegment(
     val arrival: AirportPoint,
     val airline: String?,
     val flightNumber: String?,
+    val durationMinutes: Int? = null,
 )
 
 data class FlightOption(

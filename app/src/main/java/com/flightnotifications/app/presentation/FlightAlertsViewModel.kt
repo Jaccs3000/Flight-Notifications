@@ -36,10 +36,14 @@ data class AlertInput(
     val startTime: LocalTime,
     val adults18Plus: Int = 1,
     val minors: List<MinorPassenger> = emptyList(),
+    val flexibleDateSearch: Boolean = false,
+    val outboundDateEnd: LocalDate = outboundDate,
+    val returnDateEnd: LocalDate? = returnDate,
 )
 
 data class FlightAlertsUiState(
     val alerts: List<AlertWithResult> = emptyList(),
+    val alertOrder: List<String> = emptyList(),
     val notifications: List<com.flightnotifications.app.data.local.SentNotificationEntity> = emptyList(),
     val reviewConfirmationId: String? = null,
     val selectedAlertId: String? = null,
@@ -72,6 +76,11 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
         viewModelScope.launch {
+            container.preferencesRepository.preferences.collect { preferences ->
+                mutableState.value = mutableState.value.copy(alertOrder = preferences.alertOrder)
+            }
+        }
+        viewModelScope.launch {
             val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 container.alertWorkScheduler.scheduleStatus()
             }
@@ -99,7 +108,12 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             enabled = true,
                             adults18Plus = input.adults18Plus,
                             minors = input.minors,
-                        ).copy(nextDueAt = requestedStartAt)
+                        ).copy(
+                            nextDueAt = requestedStartAt,
+                            flexibleDateSearch = input.flexibleDateSearch,
+                            outboundDateEnd = input.outboundDateEnd.toString(),
+                            returnDateEnd = input.returnDateEnd?.toString().orEmpty(),
+                        )
                     } else {
                         val savedStartTime = existing.nextDueAt?.let {
                             Instant.ofEpochMilli(it).atZone(COLOMBIA_ZONE).toLocalTime().withSecond(0).withNano(0)
@@ -116,6 +130,16 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                             directOnly = input.directOnly,
                             adults18Plus = input.adults18Plus,
                             minorPassengersJson = Json.encodeToString(input.minors),
+                            flexibleDateSearch = input.flexibleDateSearch,
+                            outboundDateEnd = input.outboundDateEnd.toString(),
+                            returnDateEnd = input.returnDateEnd?.toString().orEmpty(),
+                            datePairRotation = if (
+                                existing.flexibleDateSearch != input.flexibleDateSearch ||
+                                existing.outboundDate != input.outboundDate.toString() ||
+                                existing.outboundDateEnd != input.outboundDateEnd.toString() ||
+                                existing.returnDate != input.returnDate?.toString().orEmpty() ||
+                                existing.returnDateEnd != input.returnDateEnd?.toString().orEmpty()
+                            ) 0 else existing.datePairRotation,
                             nextDueAt = if (scheduleChanged) requestedStartAt else existing.nextDueAt,
                             updatedAt = System.currentTimeMillis(),
                         )
@@ -124,6 +148,13 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }.onSuccess { saved ->
                 refreshAlertsNow()
+                if (input.id == null) {
+                    val ids = mutableState.value.alerts.map { it.alert.id }
+                    val currentOrder = orderedAlertIds(ids, mutableState.value.alertOrder)
+                    val newOrder = listOf(saved.id) + currentOrder.filterNot { it == saved.id }
+                    mutableState.value = mutableState.value.copy(alertOrder = newOrder)
+                    persistAlertOrder(newOrder)
+                }
                 val message = if (input.id == null) {
                     "Alerta guardada y activa. Android puede aplazar las revisiones automáticas; si las notificaciones están desactivadas, no se iniciarán búsquedas automáticas."
                 } else if (saved.enabled) {
@@ -152,8 +183,10 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
             try {
                 val changed = container.alertMutationMutex.withLock {
                     val alert = container.flightAlertRepository.find(id) ?: return@withLock false
-                    if (enabled && LocalDate.now(COLOMBIA_ZONE).isAfter(LocalDate.parse(alert.outboundDate))) {
-                        mutableState.value = mutableState.value.copy(error = "La fecha de ida ya venció; edita la alerta antes de activarla.", message = null)
+                    val originZone = container.airportCatalog.timeZoneFor(alert.originIata) ?: COLOMBIA_ZONE
+                    val finalOutboundDate = if (alert.flexibleDateSearch) alert.outboundDateEnd.ifBlank { alert.outboundDate } else alert.outboundDate
+                    if (enabled && LocalDate.now(originZone).isAfter(LocalDate.parse(finalOutboundDate))) {
+                        mutableState.value = mutableState.value.copy(error = "El rango de fechas de ida ya venció; edita la alerta antes de activarla.", message = null)
                         return@withLock false
                     }
                     container.flightAlertRepository.setEnabled(id, enabled)
@@ -196,12 +229,14 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
                 val outcomes = container.serpApiRepository.runAlertBatch(
                     alerts = listOf(alert),
                     maximumGets = com.flightnotifications.app.data.repository.SerpApiRepository.MAX_GETS_PER_ALERT,
+                    source = "manual",
                     afterResults = { results ->
                         results.forEach { result ->
                             completedResult = result
                             val saved = container.flightAlertRepository.saveOutcome(alert.id, result, alert)
                             if (saved) {
-                                if (result.candidatesConsidered > 0) container.flightAlertRepository.advanceCandidateRotation(alert)
+                                container.flightAlertRepository.advanceDatePairRotation(alert, result)
+                                if (result.flightGetsStarted > 0) container.flightAlertRepository.advanceCandidateRotation(alert)
                                 val latest = container.flightAlertRepository.find(alert.id)
                                 if (alert.enabled && latest?.enabled == true &&
                                     latest.criteriaVersion == alert.criteriaVersion &&
@@ -244,9 +279,47 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.alertMutationMutex.withLock { container.flightAlertRepository.remove(id) }
             refreshAlertsNow()
+            val remainingIds = mutableState.value.alerts.map { it.alert.id }
+            val remainingOrder = orderedAlertIds(remainingIds, mutableState.value.alertOrder)
+            mutableState.value = mutableState.value.copy(alertOrder = remainingOrder)
+            persistAlertOrder(remainingOrder)
             container.flightDiagnosticLog.record("ui_action alert_deleted alert_id=${id.take(8)}")
             mutableState.value = mutableState.value.copy(message = "Alerta eliminada. El presupuesto global de consultas se conserva.", error = null)
         }
+    }
+
+    /** Moves an alert relative to the other alerts currently visible under the selected filter. */
+    fun moveAlert(id: String, visibleIds: List<String>, direction: Int) {
+        if (direction != -1 && direction != 1) return
+        val current = mutableState.value
+        val allIds = current.alerts.map { it.alert.id }
+        val globalOrder = orderedAlertIds(allIds, current.alertOrder)
+        val visibleSet = visibleIds.toSet()
+        val currentVisibleOrder = globalOrder.filter { it in visibleSet }
+        val from = currentVisibleOrder.indexOf(id)
+        val to = from + direction
+        if (from < 0 || to !in currentVisibleOrder.indices) return
+
+        val movedVisibleOrder = currentVisibleOrder.toMutableList().apply {
+            add(to, removeAt(from))
+        }
+        var visibleIndex = 0
+        val newGlobalOrder = globalOrder.map { alertId ->
+            if (alertId in visibleSet) movedVisibleOrder[visibleIndex++] else alertId
+        }
+        if (newGlobalOrder == current.alertOrder) return
+
+        mutableState.value = current.copy(alertOrder = newGlobalOrder)
+        viewModelScope.launch {
+            persistAlertOrder(newGlobalOrder)
+        }
+    }
+
+    private suspend fun persistAlertOrder(order: List<String>) {
+        runCatching { container.preferencesRepository.updateAlertOrder(order) }
+            .onFailure {
+                mutableState.value = mutableState.value.copy(error = "No fue posible guardar el nuevo orden de las alertas.", message = null)
+            }
     }
 
     fun requestClearNotifications() {
@@ -297,10 +370,13 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
             returnDate = input.returnDate,
             maximumCop = input.maximumCop,
             frequencyHours = input.frequencyHours,
-            today = LocalDate.now(COLOMBIA_ZONE),
-            containsDomesticAirport = container.airportCatalog::containsDomesticAirport,
+            today = LocalDate.now(container.airportCatalog.timeZoneFor(input.origin) ?: COLOMBIA_ZONE),
+            containsAirport = container.airportCatalog::containsAirport,
             adults18Plus = input.adults18Plus,
             minors = input.minors,
+            flexibleDateSearch = input.flexibleDateSearch,
+            outboundDateEnd = input.outboundDateEnd,
+            returnDateEnd = input.returnDateEnd,
         )
     }
 
@@ -311,7 +387,16 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     )
 
     private fun resultMessage(result: AlertSearchResult, alert: FlightAlertEntity): String = when (result.status) {
-        "VERIFICADO" -> "Tarifa de ${tripLabel(alert)} verificada para ${result.offers.size} opción(es) · ${passengerLabel(alert)}. GET de vuelos: ${result.flightGetsStarted}; exploración ${if (result.explorationLimited) "parcial" else "completa dentro de las opciones recibidas"}."
+        "VERIFICADO" -> buildString {
+            append("Tarifa de ${tripLabel(alert)} verificada para ${result.offers.size} opción(es) · ${passengerLabel(alert)}. ")
+            if (alert.flexibleDateSearch) append("Combinaciones consultadas en esta ejecución: ${result.datePairScannedIndices.size} de ${result.datePairCount}. ")
+            if (result.explorationLimited) append("Búsqueda parcial: la tarifa es la mejor observada hasta ahora, no un mínimo confirmado para todo el rango. ")
+            else append("Exploración completa dentro de las opciones recibidas. ")
+            append("Candidatas revisadas: ${result.candidatesCompleted}; fallidas: ${result.candidateFailures}. ")
+            result.accountAlias?.let { append("Cuenta: $it. ") }
+            result.error?.let { append("Incidencia: ${errorMessage(it)} ") }
+            append("GET de vuelos: ${result.flightGetsStarted}.")
+        }
         "NO_VERIFICADO" -> "Se recibieron itinerarios, pero la fuente no permitió confirmar el precio total. GET: ${result.flightGetsStarted}."
         "SIN_RESULTADOS_DEVUELTOS" -> "SerpApi no devolvió opciones para esta consulta. Esto no confirma que no existan vuelos."
         "EXPIRED" -> "La fecha de ida de esta alerta venció; no se hizo una consulta."
@@ -329,6 +414,7 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
         "RATE_LIMITED" -> "SerpApi aplicó un límite temporal. La app esperará antes del siguiente turno."
         "SERVICE_UNAVAILABLE" -> "SerpApi no está disponible; la app esperará antes del siguiente turno."
         "QUOTA_INSUFFICIENT" -> "La capacidad oficial no alcanza para iniciar la búsqueda de esta alerta."
+        "BATCH_BUDGET_REACHED" -> "Se alcanzó el presupuesto de consultas de esta ejecución; las fechas pendientes seguirán en la próxima revisión."
         "LOCAL_QUOTA" -> "El límite local de GET en 30 días alcanzó su tope."
         "CLOCK_UNTRUSTED" -> "La hora del dispositivo no es confiable; las consultas quedaron bloqueadas."
         "INVALID_CRITERIA", "EXPIRED" -> "Los criterios de esta alerta ya no son válidos o vencieron."
@@ -355,6 +441,13 @@ class FlightAlertsViewModel(private val container: AppContainer) : ViewModel() {
     companion object {
         val FREQUENCIES = FlightAlertInputValidator.ALLOWED_FREQUENCIES
     }
+}
+
+internal fun orderedAlertIds(currentIds: List<String>, savedOrder: List<String>): List<String> {
+    val currentSet = currentIds.toSet()
+    val knownSaved = savedOrder.filter { it in currentSet }.distinct()
+    val savedSet = knownSaved.toSet()
+    return knownSaved + currentIds.filterNot { it in savedSet }
 }
 
 private val COLOMBIA_ZONE = ZoneId.of("America/Bogota")

@@ -1,6 +1,8 @@
 package com.flightnotifications.app
 
+import android.content.ClipboardManager
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertCountEquals
@@ -31,6 +33,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 
 @RunWith(AndroidJUnit4::class)
 class ProbeScreenTest {
@@ -50,16 +54,58 @@ class ProbeScreenTest {
         compose.onNodeWithText("Cuenta y conexión").assertIsDisplayed()
         compose.onNodeWithText("Presupuesto de consultas").assertIsDisplayed()
         compose.onNodeWithText("Herramientas y opciones").performScrollTo()
+        val version = compose.activity.packageManager.getPackageInfo(
+            compose.activity.packageName,
+            android.content.pm.PackageManager.PackageInfoFlags.of(0),
+        ).versionName
+        compose.onNodeWithText("Alertas de vuelos · versión $version").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsCopiesTheCompleteRedactedLatestSearchLog() {
+        val container = (compose.activity.application as FlightProbeApplication).container
+        runBlocking(Dispatchers.IO) {
+            container.flightDiagnosticLog.beginCapture("search_started api_key=FAKE_COPY_KEY")
+            container.flightDiagnosticLog.recordPayload(
+                "HTTP response",
+                buildString {
+                    appendLine("{\"booking_token\":\"FAKE_BOOKING_TOKEN\",")
+                    repeat(350) { appendLine("  \"result_$it\": \"observed\",") }
+                    append("  \"status\": \"complete\"}")
+                },
+            )
+        }
+
+        try {
+            compose.onNodeWithText("Ajustes").performClick()
+            val copyButton = compose.onNodeWithText("Copiar log de última búsqueda").performScrollTo()
+            compose.waitUntil(5_000) {
+                container.flightDiagnosticLog.text.value.contains("result_349")
+            }
+            copyButton.assertIsEnabled().performClick()
+            compose.waitForIdle()
+
+            val clipboard = InstrumentationRegistry.getInstrumentation().targetContext
+                .getSystemService(ClipboardManager::class.java)
+            val copied = clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+            assertTrue(copied.contains("result_349"))
+            assertTrue(copied.contains("api_key=[REDACTED]"))
+            assertTrue(copied.contains("booking_token\":[REDACTED]"))
+            assertFalse(copied.contains("FAKE_COPY_KEY"))
+            assertFalse(copied.contains("FAKE_BOOKING_TOKEN"))
+        } finally {
+            runBlocking(Dispatchers.IO) { container.flightDiagnosticLog.clear() }
+        }
     }
 
     @Test
     fun airportAutocompleteSaveAndDeleteRefreshesTheAlertsList() {
         compose.onNodeWithTag("new-alert").performClick()
-        compose.onNodeWithTag("alert-origin").performTextInput("car")
-        compose.onNodeWithText("CARTAGENA DE INDIAS · CTG").performClick()
+        compose.onNodeWithTag("alert-origin").performTextInput("cartagena")
+        compose.onNodeWithText("Cartagena · CTG").performClick()
         compose.onNodeWithTag("alert-destination").performTextInput("CLO")
-        compose.onNodeWithText("SANTIAGO DE CALI · CLO").performClick()
-        compose.onNodeWithText("ALFONSO BONILLA ARAGON").assertIsDisplayed()
+        compose.onNodeWithText("Cali · CLO").performClick()
+        compose.onNodeWithText("Alfonso Bonilla Aragon International Airport", substring = true).assertIsDisplayed()
 
         compose.onNodeWithTag("alert-maximum").performScrollTo().performTextClearance()
         compose.onNodeWithTag("alert-maximum").performTextInput("567891")
@@ -74,8 +120,8 @@ class ProbeScreenTest {
         compose.onNodeWithText("$ 567.891").assertIsDisplayed()
         compose.onNodeWithText("Cada 12 h").assertIsDisplayed()
         assertTrue("La alerta recién guardada debe aparecer encendida", compose.onAllNodes(isOn()).fetchSemanticsNodes().isNotEmpty())
-        compose.onAllNodesWithText("Cartagena - Rafael Núñez (CTG)")[0].assertIsDisplayed()
-        compose.onAllNodesWithText("Cali - Alfonso Bonilla Aragón (CLO)")[0].assertIsDisplayed()
+        compose.onAllNodesWithText("Rafael Núñez International Airport (CTG) · Colombia")[0].assertIsDisplayed()
+        compose.onAllNodesWithText("Alfonso Bonilla Aragón International Airport (CLO) · Colombia")[0].assertIsDisplayed()
 
         compose.onAllNodesWithText("Ver resultados")[0].performClick()
         compose.onNodeWithText("Último resultado").assertIsDisplayed()
@@ -118,10 +164,10 @@ class ProbeScreenTest {
             compose.onNodeWithTag("confirm-minor-age").performClick()
             compose.onNodeWithText("Bebé de 0 años · en brazos").assertIsDisplayed()
 
-            compose.onNodeWithTag("alert-origin").performScrollTo().performTextInput("CTG")
-            compose.onNodeWithText("CARTAGENA DE INDIAS · CTG").performClick()
+            compose.onNodeWithTag("alert-origin").performScrollTo().performTextInput("cartagena")
+            compose.onNodeWithText("Cartagena · CTG").performClick()
             compose.onNodeWithTag("alert-destination").performTextInput("CLO")
-            compose.onNodeWithText("SANTIAGO DE CALI · CLO").performClick()
+            compose.onNodeWithText("Cali · CLO").performClick()
             compose.onNodeWithTag("save-alert").performScrollTo().performClick()
 
             compose.waitUntil(10_000) {
@@ -142,6 +188,49 @@ class ProbeScreenTest {
             compose.onNodeWithText("2 adultos · 1 niño · 1 bebé").assertIsDisplayed()
         } finally {
             savedAlertId?.let { id -> runBlocking(Dispatchers.IO) { container.flightAlertRepository.remove(id) } }
+        }
+    }
+
+    @Test
+    fun flexibleDateModeShowsBothWindowsAndSavesWithoutSearching() {
+        val container = (compose.activity.application as FlightProbeApplication).container
+        val existingIds = runBlocking(Dispatchers.IO) { container.flightAlertRepository.currentAlerts().map { it.alert.id }.toSet() }
+        var savedId: String? = null
+        try {
+            compose.onNodeWithTag("new-alert").performClick()
+            compose.onNodeWithTag("alert-origin").performTextInput("cartagena")
+            compose.onNodeWithText("Cartagena · CTG").performClick()
+            compose.onNodeWithTag("alert-destination").performTextInput("CLO")
+            compose.onNodeWithText("Cali · CLO").performClick()
+            compose.onNodeWithTag("date-mode-flexible").performScrollTo().performClick()
+
+            compose.onNodeWithTag("alert-date-outbound-start").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("alert-date-outbound-end").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("alert-date-return-start").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("alert-date-return-end").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("alert-date-combination-count").performScrollTo().assertIsDisplayed()
+
+            compose.onNodeWithTag("alert-maximum").performScrollTo().performTextClearance()
+            compose.onNodeWithTag("alert-maximum").performTextInput("450000")
+            dismissKeyboard()
+            compose.onNodeWithTag("save-alert").performScrollTo().performClick()
+            compose.waitUntil(10_000) {
+                runBlocking(Dispatchers.IO) {
+                    container.flightAlertRepository.currentAlerts().any { it.alert.id !in existingIds && it.alert.flexibleDateSearch }
+                }
+            }
+            val saved = runBlocking(Dispatchers.IO) {
+                container.flightAlertRepository.currentAlerts().first { it.alert.id !in existingIds && it.alert.flexibleDateSearch }.alert
+            }
+            savedId = saved.id
+            assertTrue(saved.enabled)
+            assertEquals(saved.outboundDate, saved.outboundDateEnd)
+            assertEquals(saved.returnDate, saved.returnDateEnd)
+            assertTrue(saved.returnDate.isNotBlank())
+            assertEquals(0, saved.datePairRotation)
+            assertTrue("Creating a flexible alert must not send a flight request", saved.lastAttemptAt == null)
+        } finally {
+            savedId?.let { id -> runBlocking(Dispatchers.IO) { container.flightAlertRepository.remove(id) } }
         }
     }
 

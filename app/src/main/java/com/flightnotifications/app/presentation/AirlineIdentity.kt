@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
@@ -46,6 +47,7 @@ internal fun AirlineIdentity(
     prominentCompact: Boolean = false,
     centered: Boolean = false,
     logoSize: Dp? = null,
+    wrapText: Boolean = false,
 ) {
     val brands = remember(airline) { airlineBrands(airline) }
     val badgeSize = logoSize ?: if (compact) 28.dp else 32.dp
@@ -80,7 +82,7 @@ internal fun AirlineIdentity(
         }
         Text(
             text = airline,
-            modifier = if (centered) Modifier else Modifier.weight(1f),
+            modifier = if (centered || wrapText) Modifier else Modifier.weight(1f),
             color = if (brands.size == 1) brands.first().color else MaterialTheme.colorScheme.onSurface,
             style = when {
                 prominent && brands.size > 1 -> MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp)
